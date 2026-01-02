@@ -111,7 +111,7 @@ export default function Home() {
               onClick={handleDateClick}
               className="text-left cursor-pointer hover:opacity-80 transition-opacity w-full"
             >
-              <p className="text-sm opacity-90 font-medium">
+              <p className="text-sm text-white font-bold">
                 {format(selectedDate, 'EEEE, MMMM d, yyyy')}
               </p>
             </button>
@@ -124,7 +124,7 @@ export default function Home() {
               aria-label="Select date"
             />
           </div>
-          <h1 className="text-2xl font-bold text-right">Lottery System</h1>
+          <h1 className="text-2xl font-bold text-right">End of Day Report</h1>
         </div>
       </div>
 
