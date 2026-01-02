@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -16,6 +16,9 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [todayReport, setTodayReport] = useState<any>(null);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showCalendar, setShowCalendar] = useState(false);
+  const calendarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchSummary();
@@ -36,29 +39,33 @@ export default function Home() {
     }
   };
 
-  const fetchTodayReport = async () => {
+  const fetchTodayReport = async (date?: Date) => {
     try {
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const response = await fetch(`/api/reports?date=${today}`);
+      const dateToUse = date || selectedDate;
+      const dateStr = format(dateToUse, 'yyyy-MM-dd');
+      const response = await fetch(`/api/reports?date=${dateStr}`);
       const data = await response.json();
       if (data.success && data.reports.length > 0) {
         setTodayReport(data.reports[0]);
+      } else {
+        setTodayReport(null);
       }
     } catch (error) {
       console.error('Error fetching today report:', error);
     }
   };
 
-  const generateTodayReport = async () => {
+  const generateTodayReport = async (date?: Date) => {
     try {
-      const today = format(new Date(), 'yyyy-MM-dd');
+      const dateToUse = date || selectedDate;
+      const dateStr = format(dateToUse, 'yyyy-MM-dd');
       const response = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          date: today,
+          date: dateStr,
           createdBy: 'user', // Replace with actual user
         }),
       });
@@ -73,11 +80,52 @@ export default function Home() {
     }
   };
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    setSelectedDate(newDate);
+    setShowCalendar(false);
+    fetchTodayReport(newDate);
+  };
+
+  const handleDateClick = () => {
+    setShowCalendar(true);
+    // Trigger the date input click for mobile calendar
+    setTimeout(() => {
+      if (calendarRef.current) {
+        calendarRef.current.focus();
+        calendarRef.current.click();
+        // Try to show picker if available (modern browsers)
+        if (typeof calendarRef.current.showPicker === 'function') {
+          calendarRef.current.showPicker();
+        }
+      }
+    }, 50);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <h1 className="text-2xl font-bold">Lottery System</h1>
-        <p className="text-sm opacity-90">{format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
+        <div className="flex justify-between items-center">
+          <div className="flex-1">
+            <button
+              onClick={handleDateClick}
+              className="text-left cursor-pointer hover:opacity-80 transition-opacity w-full"
+            >
+              <p className="text-sm opacity-90 font-medium">
+                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+              </p>
+            </button>
+            <input
+              ref={calendarRef}
+              type="date"
+              value={format(selectedDate, 'yyyy-MM-dd')}
+              onChange={handleDateChange}
+              className="absolute opacity-0 w-0 h-0"
+              aria-label="Select date"
+            />
+          </div>
+          <h1 className="text-2xl font-bold text-right">Lottery System</h1>
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
@@ -98,10 +146,14 @@ export default function Home() {
         {/* Today's Report Card */}
         <div className="bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xl font-bold">Today&apos;s Report</h2>
+            <h2 className="text-xl font-bold">
+              {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                ? "Today's Report"
+                : `${format(selectedDate, 'MMM d')} Report`}
+            </h2>
             {!todayReport && (
               <button
-                onClick={generateTodayReport}
+                onClick={() => generateTodayReport(selectedDate)}
                 className="bg-blue-500 text-white px-4 py-2 rounded text-sm active:bg-blue-600"
               >
                 Generate
