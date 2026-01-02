@@ -98,7 +98,7 @@ export default function Home() {
         {/* Today's Report Card */}
         <div className="bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xl font-bold">Today's Report</h2>
+            <h2 className="text-xl font-bold">Today&apos;s Report</h2>
             {!todayReport && (
               <button
                 onClick={generateTodayReport}

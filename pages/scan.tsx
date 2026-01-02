@@ -218,7 +218,7 @@ export default function ScanPage() {
         {/* Today's Scanned Tickets */}
         <div className="bg-white rounded-lg shadow-md p-4">
           <h2 className="text-xl font-bold mb-3">
-            Today's Tickets ({todayTickets.length})
+            Today&apos;s Tickets ({todayTickets.length})
           </h2>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {todayTickets.length === 0 ? (
