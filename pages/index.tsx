@@ -142,6 +142,13 @@ export default function Home() {
             </button>
           </Link>
         </div>
+        <div className="mt-4">
+          <Link href="/daily-report">
+            <button className="w-full bg-purple-500 text-white p-6 rounded-lg shadow-md text-lg font-semibold active:bg-purple-600">
+              Daily Lottery Report
+            </button>
+          </Link>
+        </div>
 
         {/* Today's Report Card */}
         <div className="bg-white rounded-lg shadow-md p-4">
