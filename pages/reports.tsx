@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import Image from 'next/image';
 import { format, parseISO } from 'date-fns';
 
 interface Report {
@@ -13,13 +15,38 @@ interface Report {
 }
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
+    // Check authentication and role
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userStr);
+      // Redirect admin users to admin dashboard
+      if (user.role === 'admin') {
+        router.push('/admin/dashboard');
+        return;
+      }
+      // Only allow employee users
+      if (user.role !== 'employee') {
+        router.push('/login');
+        return;
+      }
+    } catch (error) {
+      router.push('/login');
+      return;
+    }
+
     fetchReports();
-  }, []);
+  }, [router]);
 
   const fetchReports = async () => {
     try {
@@ -63,13 +90,24 @@ export default function ReportsPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <h1 className="text-2xl font-bold">Daily Reports</h1>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center">
+            <Image 
+              src="/logos.png" 
+              alt="QuickRepp Logo" 
+              width={70} 
+              height={70}
+              className="rounded-lg"
+            />
+          </div>
+          <h1 className="text-2xl font-bold">Daily Reports</h1>
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
         {/* Generate Report Section */}
         <div className="bg-white rounded-lg shadow-md p-4">
-          <h2 className="text-xl font-bold mb-3">Generate Report</h2>
+          <h2 className="text-xl font-bold mb-3 text-gray-900">Generate Report</h2>
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -79,7 +117,7 @@ export default function ReportsPage() {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg"
+                className="w-full p-3 border border-gray-300 rounded-lg text-gray-900 bg-white"
               />
             </div>
             <button
@@ -93,7 +131,7 @@ export default function ReportsPage() {
 
         {/* Reports List */}
         <div className="bg-white rounded-lg shadow-md p-4">
-          <h2 className="text-xl font-bold mb-3">Recent Reports</h2>
+          <h2 className="text-xl font-bold mb-3 text-gray-900">Recent Reports</h2>
           {loading ? (
             <p className="text-center py-8 text-gray-500">Loading...</p>
           ) : reports.length === 0 ? (
@@ -107,7 +145,7 @@ export default function ReportsPage() {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <h3 className="font-bold text-lg">
+                      <h3 className="font-bold text-lg text-gray-900">
                         {format(parseISO(report.date), 'MMMM d, yyyy')}
                       </h3>
                       <p className="text-sm text-gray-600">

@@ -8,6 +8,10 @@ export interface ITicket extends Document {
   scannedBy: string;
   date: Date;
   notes?: string;
+  gameBook?: string;
+  gameNumber?: string;
+  gameName?: string;
+  costPerTicket?: number;
 }
 
 const TicketSchema: Schema = new Schema({
@@ -40,6 +44,18 @@ const TicketSchema: Schema = new Schema({
   },
   notes: {
     type: String,
+  },
+  gameBook: {
+    type: String,
+  },
+  gameNumber: {
+    type: String,
+  },
+  gameName: {
+    type: String,
+  },
+  costPerTicket: {
+    type: Number,
   },
 }, {
   timestamps: true,

@@ -38,7 +38,7 @@ export default function LandingPage() {
               lineHeight: '100%',
               letterSpacing: '-0.04em'
             }}>
-              Lottery Operations Made Simple
+              Daily Operations Made Simple
             </h2>
             <p className="text-lg text-white/90">
               No manual calculations or paper tracking. Streamline your daily lottery operations and reports with ease.
@@ -74,7 +74,7 @@ export default function LandingPage() {
         {/* Footer Links */}
         <div className="text-sm text-white/70 space-y-2">
           <div className="flex space-x-4">
-            <a href="#" className="hover:text-white">Contact</a>
+            <a href="mailto:info@quickrepp.com" className="hover:text-white">Contact</a>
             {/* <a href="#" className="hover:text-white">Social</a>
             <a href="#" className="hover:text-white">Address</a>*/}
             <a href="#" className="hover:text-white">Legal Terms</a> 
@@ -311,7 +311,10 @@ export default function LandingPage() {
             <div className="text-sm text-gray-600 space-y-2">
               <div>
                 <p className="font-semibold text-[#2683EB] mb-1">Contact</p>
-                <p>info@quickrepp.com</p>
+                <div className="flex items-center space-x-4">
+                  <a href="mailto:info@quickrepp.com" className="hover:text-[#2683EB] hover:underline">info@quickrepp.com</a>
+                  <Link href="/admin/login" className="hover:text-[#2683EB]">Admin Login</Link>
+                </div>
                 {/* <div className="flex space-x-4 mt-2">
                   <a href="#" className="hover:text-[#2683EB]">Instagram</a>
                   <a href="#" className="hover:text-[#2683EB]">X</a>

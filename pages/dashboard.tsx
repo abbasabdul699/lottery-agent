@@ -1,28 +1,83 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Image from 'next/image';
 import { format } from 'date-fns';
 
 interface SummaryData {
   totalRevenue: number;
+  totalCardSales: number;
   totalTickets: number;
   totalDeposits: number;
+  todayOverShort: number;
+  yesterdayInstantSale: number;
   reportCount: number;
+}
+
+interface ChecklistStatus {
+  scanning: {
+    completed: boolean;
+    uniqueGamesScanned: number;
+    expectedGameCount: number;
+    totalTicketsScanned: number;
+    priceGroupsScanned: number[];
+    allPriceGroupsScanned: boolean;
+  };
+  dailyReport: {
+    completed: boolean;
+    fieldsCompleted: {
+      register1: boolean;
+      register2: boolean;
+      todayCashSection: boolean;
+    };
+  };
+  allComplete: boolean;
 }
 
 export default function Dashboard() {
   const router = useRouter();
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [todayReport, setTodayReport] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
+  const [checklistStatus, setChecklistStatus] = useState<ChecklistStatus | null>(null);
   const calendarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Check authentication and role
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userStr);
+      // Redirect admin users to admin dashboard
+      if (user.role === 'admin') {
+        router.push('/admin/dashboard');
+        return;
+      }
+      // Only allow employee users
+      if (user.role !== 'employee') {
+        router.push('/login');
+        return;
+      }
+    } catch (error) {
+      router.push('/login');
+      return;
+    }
+
     fetchSummary();
-    fetchTodayReport();
-  }, []);
+    fetchChecklistStatus();
+    
+    // Set up polling to auto-update checklist every 10 seconds
+    const interval = setInterval(() => {
+      fetchChecklistStatus();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [router]);
 
   const fetchSummary = async () => {
     try {
@@ -38,44 +93,17 @@ export default function Dashboard() {
     }
   };
 
-  const fetchTodayReport = async (date?: Date) => {
+  const fetchChecklistStatus = async (date?: Date) => {
     try {
       const dateToUse = date || selectedDate;
       const dateStr = format(dateToUse, 'yyyy-MM-dd');
-      const response = await fetch(`/api/reports?date=${dateStr}`);
-      const data = await response.json();
-      if (data.success && data.reports.length > 0) {
-        setTodayReport(data.reports[0]);
-      } else {
-        setTodayReport(null);
-      }
-    } catch (error) {
-      console.error('Error fetching today report:', error);
-    }
-  };
-
-  const generateTodayReport = async (date?: Date) => {
-    try {
-      const dateToUse = date || selectedDate;
-      const dateStr = format(dateToUse, 'yyyy-MM-dd');
-      const response = await fetch('/api/reports/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          date: dateStr,
-          createdBy: 'user', // Replace with actual user
-        }),
-      });
+      const response = await fetch(`/api/checklist/status?date=${dateStr}`);
       const data = await response.json();
       if (data.success) {
-        setTodayReport(data.report);
-        fetchSummary();
+        setChecklistStatus(data.status);
       }
     } catch (error) {
-      console.error('Error generating report:', error);
-      alert('Failed to generate report');
+      console.error('Error fetching checklist status:', error);
     }
   };
 
@@ -83,34 +111,43 @@ export default function Dashboard() {
     const newDate = new Date(e.target.value);
     setSelectedDate(newDate);
     setShowCalendar(false);
-    fetchTodayReport(newDate);
+    fetchChecklistStatus(newDate);
   };
 
   const handleDateClick = () => {
-    setShowCalendar(true);
-    // Trigger the date input click for mobile calendar
-    setTimeout(() => {
-      if (calendarRef.current) {
-        calendarRef.current.focus();
+    if (calendarRef.current) {
+      calendarRef.current.focus();
+      // Try to show picker if available (modern browsers)
+      if (typeof calendarRef.current.showPicker === 'function') {
+        calendarRef.current.showPicker();
+      } else {
+        // Fallback: click the input directly
         calendarRef.current.click();
-        // Try to show picker if available (modern browsers)
-        if (typeof calendarRef.current.showPicker === 'function') {
-          calendarRef.current.showPicker();
-        }
       }
-    }, 50);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
         <div className="flex justify-between items-center">
-          <div className="flex-1">
+          <div className="flex items-center">
+            <Image 
+              src="/logos.png" 
+              alt="QuickRepp Logo" 
+              width={70} 
+              height={70}
+              className="rounded-lg"
+            />
+          </div>
+          <div className="relative text-right">
+            <h1 className="text-2xl font-bold">Dashboard</h1>
             <button
+              type="button"
               onClick={handleDateClick}
-              className="text-left cursor-pointer hover:opacity-80 transition-opacity w-full"
+              className="text-right cursor-pointer hover:opacity-80 transition-opacity mt-1"
             >
-              <p className="text-sm text-white font-bold">
+              <p className="text-base text-white font-bold">
                 {format(selectedDate, 'EEEE, MMMM d, yyyy')}
               </p>
             </button>
@@ -119,11 +156,11 @@ export default function Dashboard() {
               type="date"
               value={format(selectedDate, 'yyyy-MM-dd')}
               onChange={handleDateChange}
-              className="absolute opacity-0 w-0 h-0"
+              className="absolute opacity-0 pointer-events-none"
+              style={{ right: 0, top: 0, width: '200px', height: '60px' }}
               aria-label="Select date"
             />
           </div>
-          <h1 className="text-2xl font-bold text-right">End of Day Report</h1>
         </div>
       </div>
 
@@ -142,48 +179,105 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Today's Report Card */}
+        {/* Closing Checklist */}
         <div className="bg-white rounded-lg shadow-md p-4">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xl font-bold">
-              {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
-                ? "Today's Report"
-                : `${format(selectedDate, 'MMM d')} Report`}
-            </h2>
-            {!todayReport && (
-              <button
-                onClick={() => generateTodayReport(selectedDate)}
-                className="bg-blue-500 text-white px-4 py-2 rounded text-sm active:bg-blue-600"
-              >
-                Generate
-              </button>
-            )}
-          </div>
-          {todayReport ? (
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Revenue:</span>
-                <span className="font-bold text-green-600">
-                  ${todayReport.totalRevenue.toFixed(2)}
-                </span>
+          <h2 className="text-xl font-bold mb-3 text-gray-900">Closing Checklist</h2>
+          {checklistStatus ? (
+            <div className="space-y-3">
+              {/* Scanning Section */}
+              <div className="border-b border-gray-200 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    {checklistStatus.scanning.completed ? (
+                      <svg className="w-6 h-6 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <div className="w-6 h-6 border-2 border-gray-300 rounded-full"></div>
+                    )}
+                    <span className={`font-semibold ${checklistStatus.scanning.completed ? 'text-green-700' : 'text-gray-700'}`}>
+                      Scan All Tickets
+                    </span>
+                  </div>
+                </div>
+                <div className="pl-8 text-sm text-gray-600 space-y-1">
+                  <p>
+                    Tickets scanned: <span className="font-semibold">{checklistStatus.scanning.totalTicketsScanned}</span>
+                  </p>
+                  {checklistStatus.scanning.allPriceGroupsScanned ? (
+                    <p className="text-green-600">✓ All price groups scanned</p>
+                  ) : (
+                    <p>
+                      Price groups: {checklistStatus.scanning.priceGroupsScanned.length} / {checklistStatus.scanning.priceGroupsScanned.length > 0 ? 'Multiple' : '0'}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Tickets:</span>
-                <span className="font-bold">{todayReport.totalTickets}</span>
+
+              {/* Daily Report Section */}
+              <div className="border-b border-gray-200 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    {checklistStatus.dailyReport.completed ? (
+                      <svg className="w-6 h-6 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <div className="w-6 h-6 border-2 border-gray-300 rounded-full"></div>
+                    )}
+                    <span className={`font-semibold ${checklistStatus.dailyReport.completed ? 'text-green-700' : 'text-gray-700'}`}>
+                      Complete Daily Report
+                    </span>
+                  </div>
+                </div>
+                <div className="pl-8 text-sm text-gray-600 space-y-1">
+                  <div className="flex items-center space-x-2">
+                    {checklistStatus.dailyReport.fieldsCompleted.register1 ? (
+                      <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <div className="w-4 h-4 border border-gray-300 rounded"></div>
+                    )}
+                    <span>Lottery Register 1</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {checklistStatus.dailyReport.fieldsCompleted.register2 ? (
+                      <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <div className="w-4 h-4 border border-gray-300 rounded"></div>
+                    )}
+                    <span>Lottery Register 2</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {checklistStatus.dailyReport.fieldsCompleted.todayCashSection ? (
+                      <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <div className="w-4 h-4 border border-gray-300 rounded"></div>
+                    )}
+                    <span>Today&apos;s Cash Section</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Cash on Hand:</span>
-                <span className="font-bold">${todayReport.cashOnHand.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between border-t pt-2">
-                <span className="text-gray-600 font-semibold">Deposit Amount:</span>
-                <span className="font-bold text-blue-600 text-lg">
-                  ${todayReport.depositAmount.toFixed(2)}
-                </span>
-              </div>
+
+              {/* Overall Status */}
+              {checklistStatus.allComplete && (
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center space-x-2 text-green-600 font-semibold">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span>All tasks completed! Ready to close.</span>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-4">No report generated yet</p>
+            <p className="text-gray-500 text-center py-4">Loading checklist...</p>
           )}
         </div>
 
@@ -193,19 +287,31 @@ export default function Dashboard() {
             <h2 className="text-xl font-bold mb-3 text-black">Today&apos;s Summary</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-600">Total Revenue</p>
+                <p className="text-sm text-gray-600">Total Card Sales</p>
                 <p className="text-2xl font-bold text-green-600">
-                  ${summary.totalRevenue.toFixed(2)}
+                  ${summary.totalCardSales?.toFixed(2) || '0.00'}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Tickets</p>
+                <p className="text-sm text-gray-600">Total Books Scanned</p>
                 <p className="text-2xl font-bold text-black">{summary.totalTickets || 0}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Deposits</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  ${summary.totalDeposits.toFixed(2)}
+                <p className="text-sm text-gray-600">Over/Short</p>
+                <p className={`text-2xl font-bold ${
+                  (summary.todayOverShort || 0) > 0 
+                    ? 'text-green-600' 
+                    : (summary.todayOverShort || 0) < 0 
+                    ? 'text-red-600' 
+                    : 'text-gray-600'
+                }`}>
+                  ${(summary.todayOverShort || 0).toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Yesterday&apos;s Instant Sale</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  ${(summary.yesterdayInstantSale || 0).toFixed(2)}
                 </p>
               </div>
             </div>

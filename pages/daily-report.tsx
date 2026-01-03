@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
+import Image from 'next/image';
+import React from 'react';
 
 interface DailyLotteryReport {
   _id?: string;
@@ -25,6 +27,95 @@ interface DailyLotteryReport {
   overShort?: number;
   notes?: string;
 }
+
+const helpContent: Record<string, { title: string; instruction: string; imageUrl?: string }> = {
+  onlineNetSalesSR50: {
+    title: 'Online Net Sales (SR50)',
+    instruction: 'Find this value on your lottery terminal report. Look for "NET SALES" in the Online section (SR50). This is the total sales minus any cancellations or free bets.',
+    imageUrl: '/help-images/online-net-sales.png',
+  },
+  onlineCashingSR50: {
+    title: 'Online Cashing (SR50)',
+    instruction: 'On your lottery terminal report, locate the "CASHES" or "CASHING" section for Online (SR50). Enter the total number of cashes multiplied by the cash amount, or the total cash value shown.',
+    imageUrl: '/help-images/online-cashing.png',
+  },
+  instantCashingSR34: {
+    title: 'Instant Cashing (SR34)',
+    instruction: 'Find the "CASHES" or "CASHING" section for Instant tickets (SR34) on your terminal report. Enter the total cash value for instant ticket cashes.',
+    imageUrl: '/help-images/instant-cashing.png',
+  },
+  instantSaleSR34: {
+    title: 'Yesterday Instant Sale (SR34)',
+    instruction: 'Locate the "INSTANT SALE" or "INSTANT SALES" section on your terminal report for SR34. This shows the total sales value for instant/scratch-off tickets.',
+    imageUrl: '/help-images/instant-sale.png',
+  },
+  onlineNetSales2SR50: {
+    title: 'Online Net Sales (SR50) - Register 2',
+    instruction: 'Find this value on your second lottery terminal report. Look for "NET SALES" in the Online section (SR50) for Register 2.',
+    imageUrl: '/help-images/online-net-sales.png',
+  },
+  onlineCashing2SR50: {
+    title: 'Online Cashing (SR50) - Register 2',
+    instruction: 'On your second lottery terminal report, locate the "CASHES" or "CASHING" section for Online (SR50) for Register 2.',
+    imageUrl: '/help-images/online-cashing.png',
+  },
+  instantCashing2SR34: {
+    title: 'Instant Cashing (SR34) - Register 2',
+    instruction: 'Find the "CASHES" or "CASHING" section for Instant tickets (SR34) on your second terminal report (Register 2).',
+    imageUrl: '/help-images/instant-cashing.png',
+  },
+};
+
+const InputField = React.memo(({ label, field, value, showHelp = true, onHelpClick, onChange, onBlur }: { 
+  label: string; 
+  field: keyof DailyLotteryReport; 
+  value: number; 
+  showHelp?: boolean;
+  onHelpClick: (field: string) => void;
+  onChange: (field: keyof DailyLotteryReport, value: string) => void;
+  onBlur?: () => void;
+}) => {
+  const hasHelp = helpContent[field as string];
+  const labelWithoutQuestion = label.replace(' ?', '');
+  
+  return (
+    <div className="mb-3">
+      <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+        <span>{labelWithoutQuestion}</span>
+        {showHelp && hasHelp && (
+          <button
+            type="button"
+            onClick={() => onHelpClick(field as string)}
+            className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center hover:bg-blue-600 active:bg-blue-700"
+            aria-label="Get help"
+          >
+            ?
+          </button>
+        )}
+      </label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-700 text-lg">$</span>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={value === 0 ? '' : value}
+          onChange={(e) => onChange(field, e.target.value)}
+          onBlur={onBlur}
+          onKeyDown={(e) => {
+            if (!/[0-9.]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) && !(e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+            }
+          }}
+          className="w-full pl-8 p-2 border border-gray-300 rounded-lg text-lg text-gray-900"
+          placeholder="0.00"
+        />
+      </div>
+    </div>
+  );
+});
+
+InputField.displayName = 'InputField';
 
 export default function DailyReportPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -59,6 +150,7 @@ export default function DailyReportPage() {
 
   useEffect(() => {
     fetchReport();
+    fetchInstantSale();
   }, [selectedDate]);
 
   const fetchReport = async () => {
@@ -68,10 +160,11 @@ export default function DailyReportPage() {
       const response = await fetch(`/api/lottery-report?date=${dateStr}`);
       const data = await response.json();
       if (data.success && data.report) {
-        setFormData({
+        setFormData((prev) => ({
           ...data.report,
           date: format(new Date(data.report.date), 'yyyy-MM-dd'),
-        });
+          instantSaleSR34: prev.instantSaleSR34 || data.report.instantSaleSR34 || 0, // Preserve instant sale from tickets
+        }));
       } else {
         // Reset to defaults for new date
         setFormData({
@@ -104,6 +197,35 @@ export default function DailyReportPage() {
     }
   };
 
+  const fetchInstantSale = async () => {
+    try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const response = await fetch(`/api/tickets/instant-sale?date=${dateStr}`);
+      const data = await response.json();
+      if (data.success) {
+        setFormData((prev) => {
+          const instantSale = data.totalInstantSale || 0;
+          // Recalculate Instant Balance when Instant Sale is updated
+          const instantBalance = instantSale - (prev.totalInstantCashing || 0);
+          // Recalculate Total Balance
+          const totalBalance = (prev.onlineBalance || 0) + instantBalance;
+          // Recalculate Over/Short
+          const overShort = totalBalance - (prev.registerCash || 0);
+          
+          return {
+            ...prev,
+            instantSaleSR34: instantSale,
+            instantBalance,
+            totalBalance,
+            overShort,
+          };
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching instant sale:', error);
+    }
+  };
+
   const handleInputChange = (field: keyof DailyLotteryReport, value: string) => {
     const numValue = parseFloat(value) || 0;
     setFormData((prev) => {
@@ -120,14 +242,25 @@ export default function DailyReportPage() {
         updated.totalInstantCashing = (updated.instantCashingSR34 || 0) + (updated.instantCashing2SR34 || 0);
       }
       
-      // Recalculate total balance whenever online or instant balance changes
-      if (field === 'onlineBalance' || field === 'instantBalance') {
+      // Auto-calculate Instant Balance: Instant Sale (SR34) - Total Instant Cashing
+      // Note: instantSaleSR34 comes from scanned tickets, so we recalculate when instant cashing changes
+      if (field === 'instantCashingSR34' || field === 'instantCashing2SR34') {
+        updated.instantBalance = (updated.instantSaleSR34 || 0) - (updated.totalInstantCashing || 0);
+      }
+      
+      // Auto-calculate Online Balance: Total Online Net Sales - Total Online Cashing
+      if (field === 'onlineNetSalesSR50' || field === 'onlineNetSales2SR50' || field === 'onlineCashingSR50' || field === 'onlineCashing2SR50') {
+        updated.onlineBalance = (updated.totalOnlineNetSales || 0) - (updated.totalOnlineCashing || 0);
+      }
+      
+      // Auto-calculate Total Balance: Instant Balance + Online Balance
+      if (field === 'instantSaleSR34' || field === 'instantCashingSR34' || field === 'instantCashing2SR34' || field === 'onlineNetSalesSR50' || field === 'onlineNetSales2SR50' || field === 'onlineCashingSR50' || field === 'onlineCashing2SR50') {
         updated.totalBalance = (updated.onlineBalance || 0) + (updated.instantBalance || 0);
       }
       
       // Recalculate over/short whenever total balance or register cash changes
-      if (field === 'onlineBalance' || field === 'instantBalance' || field === 'totalBalance' || field === 'registerCash') {
-        const totalBal = field === 'totalBalance' ? numValue : (updated.onlineBalance || 0) + (updated.instantBalance || 0);
+      if (field === 'instantSaleSR34' || field === 'instantCashingSR34' || field === 'instantCashing2SR34' || field === 'registerCash' || field === 'onlineNetSalesSR50' || field === 'onlineNetSales2SR50' || field === 'onlineCashingSR50' || field === 'onlineCashing2SR50') {
+        const totalBal = (updated.onlineBalance || 0) + (updated.instantBalance || 0);
         const regCash = field === 'registerCash' ? numValue : (updated.registerCash || 0);
         updated.totalBalance = totalBal;
         updated.overShort = totalBal - regCash;
@@ -165,11 +298,8 @@ export default function DailyReportPage() {
     }, 50);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveReport = async () => {
     setSaving(true);
-    setSuccess(false);
-
     try {
       const response = await fetch('/api/lottery-report', {
         method: 'POST',
@@ -186,116 +316,71 @@ export default function DailyReportPage() {
       const data = await response.json();
       if (data.success) {
         setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
+        setTimeout(() => setSuccess(false), 2000);
       } else {
-        alert(data.error || 'Failed to save report');
+        console.error('Failed to save report:', data.error);
       }
     } catch (error) {
       console.error('Error saving report:', error);
-      alert('Failed to save report');
     } finally {
       setSaving(false);
     }
   };
 
-  const helpContent: Record<string, { title: string; instruction: string; imageUrl?: string }> = {
-    onlineNetSalesSR50: {
-      title: 'Online Net Sales (SR50)',
-      instruction: 'Find this value on your lottery terminal report. Look for "NET SALES" in the Online section (SR50). This is the total sales minus any cancellations or free bets.',
-      imageUrl: '/help-images/online-net-sales.png', // Placeholder - you can add actual images later
-    },
-    onlineCashingSR50: {
-      title: 'Online Cashing (SR50)',
-      instruction: 'On your lottery terminal report, locate the "CASHES" or "CASHING" section for Online (SR50). Enter the total number of cashes multiplied by the cash amount, or the total cash value shown.',
-      imageUrl: '/help-images/online-cashing.png',
-    },
-    instantCashingSR34: {
-      title: 'Instant Cashing (SR34)',
-      instruction: 'Find the "CASHES" or "CASHING" section for Instant tickets (SR34) on your terminal report. Enter the total cash value for instant ticket cashes.',
-      imageUrl: '/help-images/instant-cashing.png',
-    },
-    instantSaleSR34: {
-      title: 'Instant Sale (SR34)',
-      instruction: 'Locate the "INSTANT SALE" or "INSTANT SALES" section on your terminal report for SR34. This shows the total sales value for instant/scratch-off tickets.',
-      imageUrl: '/help-images/instant-sale.png',
-    },
-    onlineNetSales2SR50: {
-      title: 'Online Net Sales (SR50) - Register 2',
-      instruction: 'Find this value on your second lottery terminal report. Look for "NET SALES" in the Online section (SR50) for Register 2.',
-      imageUrl: '/help-images/online-net-sales.png',
-    },
-    onlineCashing2SR50: {
-      title: 'Online Cashing (SR50) - Register 2',
-      instruction: 'On your second lottery terminal report, locate the "CASHES" or "CASHING" section for Online (SR50) for Register 2.',
-      imageUrl: '/help-images/online-cashing.png',
-    },
-    instantCashing2SR34: {
-      title: 'Instant Cashing (SR34) - Register 2',
-      instruction: 'Find the "CASHES" or "CASHING" section for Instant tickets (SR34) on your second terminal report (Register 2).',
-      imageUrl: '/help-images/instant-cashing.png',
-    },
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveReport();
   };
 
-  const InputField = ({ label, field, value, showHelp = true }: { label: string; field: keyof DailyLotteryReport; value: number; showHelp?: boolean }) => {
-    const hasHelp = helpContent[field as string];
-    const labelWithoutQuestion = label.replace(' ?', '');
-    
+
+  const ReadOnlyField = ({ label, value, highlightColor }: { label: string; value: number; highlightColor?: 'positive' | 'negative' }) => {
+    const getInputStyles = () => {
+      if (highlightColor === 'positive') {
+        return 'w-full pl-8 p-2 border border-green-300 rounded-lg text-lg bg-green-50 text-green-800';
+      } else if (highlightColor === 'negative') {
+        return 'w-full pl-8 p-2 border border-red-300 rounded-lg text-lg bg-red-50 text-red-800';
+      }
+      return 'w-full pl-8 p-2 border border-gray-300 rounded-lg text-lg bg-gray-100 text-gray-800';
+    };
+
+    const getDollarSignColor = () => {
+      if (highlightColor === 'positive') {
+        return 'text-green-700';
+      } else if (highlightColor === 'negative') {
+        return 'text-red-700';
+      }
+      return 'text-gray-700';
+    };
+
     return (
       <div className="mb-3">
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
-          <span>{labelWithoutQuestion}</span>
-          {showHelp && hasHelp && (
-            <button
-              type="button"
-              onClick={() => setHelpField(field as string)}
-              className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center hover:bg-blue-600 active:bg-blue-700"
-              aria-label="Get help"
-            >
-              ?
-            </button>
-          )}
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
         <div className="relative">
-          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-700 text-lg">$</span>
+          <span className={`absolute left-3 top-1/2 transform -translate-y-1/2 text-lg ${getDollarSignColor()}`}>$</span>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={value || 0}
-            onChange={(e) => handleInputChange(field, e.target.value)}
-            onKeyDown={(e) => {
-              // Prevent non-numeric characters except decimal point, backspace, delete, arrow keys, etc.
-              if (!/[0-9.]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) && !(e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-              }
-            }}
-            className="w-full pl-8 p-2 border border-gray-300 rounded-lg text-lg text-gray-900"
-            placeholder="0.00"
+            type="text"
+            value={value.toFixed(2)}
+            readOnly
+            className={getInputStyles()}
           />
         </div>
       </div>
     );
   };
 
-  const ReadOnlyField = ({ label, value }: { label: string; value: number }) => (
-    <div className="mb-3">
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <div className="relative">
-        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-700 text-lg">$</span>
-        <input
-          type="text"
-          value={value.toFixed(2)}
-          readOnly
-          className="w-full pl-8 p-2 border border-gray-300 rounded-lg text-lg bg-gray-100 text-gray-800"
-        />
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <div className="flex justify-end items-start mb-2">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center">
+            <Image 
+              src="/logos.png" 
+              alt="QuickRepp Logo" 
+              width={70} 
+              height={70}
+              className="rounded-lg"
+            />
+          </div>
           <div className="text-right relative">
             <h1 className="text-2xl font-bold">Daily Lottery Report</h1>
             <button
@@ -328,9 +413,9 @@ export default function DailyReportPage() {
               <h2 className="text-xl font-bold text-blue-800">Lottery Register 1</h2>
             </div>
             
-            <InputField label="Online Net Sales (SR50) ?" field="onlineNetSalesSR50" value={formData.onlineNetSalesSR50 || 0} />
-            <InputField label="Online Cashing (SR50) ?" field="onlineCashingSR50" value={formData.onlineCashingSR50 || 0} />
-            <InputField label="Instant Cashing (SR34) ?" field="instantCashingSR34" value={formData.instantCashingSR34 || 0} />
+            <InputField label="Online Net Sales (SR50) ?" field="onlineNetSalesSR50" value={formData.onlineNetSalesSR50 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+            <InputField label="Online Cashing (SR50) ?" field="onlineCashingSR50" value={formData.onlineCashingSR50 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+            <InputField label="Instant Cashing (SR34) ?" field="instantCashingSR34" value={formData.instantCashingSR34 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
           </div>
 
           {/* Register 2 Section */}
@@ -339,9 +424,9 @@ export default function DailyReportPage() {
               <h2 className="text-xl font-bold text-green-800">Lottery Register 2</h2>
             </div>
             
-            <InputField label="Online Net Sales (SR50) ?" field="onlineNetSales2SR50" value={formData.onlineNetSales2SR50 || 0} />
-            <InputField label="Online Cashing (SR50) ?" field="onlineCashing2SR50" value={formData.onlineCashing2SR50 || 0} />
-            <InputField label="Instant Cashing (SR34) ?" field="instantCashing2SR34" value={formData.instantCashing2SR34 || 0} />
+            <InputField label="Online Net Sales (SR50) ?" field="onlineNetSales2SR50" value={formData.onlineNetSales2SR50 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+            <InputField label="Online Cashing (SR50) ?" field="onlineCashing2SR50" value={formData.onlineCashing2SR50 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+            <InputField label="Instant Cashing (SR34) ?" field="instantCashing2SR34" value={formData.instantCashing2SR34 || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
           </div>
         </div>
 
@@ -355,7 +440,7 @@ export default function DailyReportPage() {
             <ReadOnlyField label="Total Online Cashing" value={formData.totalOnlineCashing || 0} />
             <ReadOnlyField label="Total Instant Cashing" value={formData.totalInstantCashing || 0} />
           </div>
-          <ReadOnlyField label="Instant Sale (SR34)" value={formData.instantSaleSR34 || 0} />
+          <ReadOnlyField label="Yesterday Instant Sale (SR34)" value={formData.instantSaleSR34 || 0} />
         </div>
 
         {/* Today Cash Section */}
@@ -366,19 +451,20 @@ export default function DailyReportPage() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <InputField label="Total EBT Sale" field="debitCreditCard" value={formData.debitCreditCard || 0} />
-              <InputField label="Total Credit Card Sale" field="creditsSale" value={formData.creditsSale || 0} />
-              <InputField label="Total Debit Card Sale" field="debitsSale" value={formData.debitsSale || 0} />
-              <InputField label="Vending Cash" field="vendingCash" value={formData.vendingCash || 0} />
+              <InputField label="Total EBT Sale" field="debitCreditCard" value={formData.debitCreditCard || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+              <InputField label="Total Credit Card Sale" field="creditsSale" value={formData.creditsSale || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+              <InputField label="Total Debit Card Sale" field="debitsSale" value={formData.debitsSale || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+              {/* <InputField label="Vending Cash" field="vendingCash" value={formData.vendingCash || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} /> */}
             </div>
             <div>
-              <InputField label="Online Balance" field="onlineBalance" value={formData.onlineBalance || 0} />
-              <InputField label="Instant Balance" field="instantBalance" value={formData.instantBalance || 0} />
+              <ReadOnlyField label="Online Balance" value={formData.onlineBalance || 0} />
+              <ReadOnlyField label="Instant Balance" value={formData.instantBalance || 0} />
               <ReadOnlyField label="Total Balance" value={formData.totalBalance || 0} />
-              <InputField label="Register Cash" field="registerCash" value={formData.registerCash || 0} />
+              <InputField label="Register Cash" field="registerCash" value={formData.registerCash || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
               <ReadOnlyField 
                 label="Over/Short" 
                 value={formData.overShort || 0}
+                highlightColor={(formData.overShort || 0) > 0 ? 'positive' : (formData.overShort || 0) < 0 ? 'negative' : undefined}
               />
             </div>
           </div>

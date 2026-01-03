@@ -8,8 +8,8 @@ export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const currentPath = router.pathname;
   
-  // Hide BottomNav on landing and login pages
-  const showBottomNav = currentPath !== '/' && currentPath !== '/login';
+  // Hide BottomNav on landing, login pages, and admin pages
+  const showBottomNav = currentPath !== '/' && currentPath !== '/login' && !currentPath.startsWith('/admin');
 
   return (
     <>

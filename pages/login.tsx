@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,20 +15,40 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    // TODO: Implement actual authentication
-    // For now, this is a placeholder that redirects to dashboard
-    // You'll need to:
-    // 1. Create an API endpoint for authentication
-    // 2. Store authentication tokens/sessions
-    // 3. Implement proper authentication logic
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    // Simulate login (remove this in production)
-    setTimeout(() => {
-      setLoading(false);
-      // For MVP, just redirect to dashboard
-      // In production, verify credentials first
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Login failed');
+        setLoading(false);
+        return;
+      }
+
+      // Check if user is employee (reject admin users)
+      if (data.user.role !== 'employee') {
+        setError('Access denied. Please use the admin login page.');
+        setLoading(false);
+        return;
+      }
+
+      // Store user data in localStorage (for MVP - use proper session management in production)
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      // Redirect to dashboard
       router.push('/dashboard');
-    }, 500);
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setError('An error occurred. Please try again.');
+      setLoading(false);
+    }
   };
 
   return (
@@ -35,8 +56,17 @@ export default function LoginPage() {
       <div className="max-w-md w-full">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <Link href="/">
-            <h1 className="text-3xl font-bold text-blue-600 mb-2">QuickRepp</h1>
+          <Link href="/" className="flex items-center justify-center space-x-2 mb-2">
+            <Image 
+              src="/logos.png" 
+              alt="QuickRepp Logo" 
+              width={48} 
+              height={48}
+              className="rounded-lg"
+            />
+            <h1 className="text-3xl font-bold text-blue-600">
+              Quick<span className="text-orange-400">Repp</span>
+            </h1>
           </Link>
           <p className="text-gray-600">Sign in to your account</p>
         </div>
@@ -92,9 +122,9 @@ export default function LoginPage() {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Don&apos;t have an account?{' '}
-              <Link href="/" className="text-blue-600 hover:text-blue-700 font-medium">
-                Contact your administrator
-              </Link>
+              <a href="mailto:admin@quickrepp.com" className="text-blue-600 hover:text-blue-700 font-medium">
+                Contact us
+              </a>
             </p>
           </div>
         </div>
