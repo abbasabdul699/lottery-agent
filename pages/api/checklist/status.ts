@@ -19,8 +19,7 @@ interface ChecklistStatus {
     fieldsCompleted: {
       register1: boolean;
       register2: boolean;
-      cashSection: boolean;
-      registerCash: boolean;
+      todayCashSection: boolean;
     };
   };
   allComplete: boolean;
