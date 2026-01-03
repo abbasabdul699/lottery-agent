@@ -275,7 +275,7 @@ export default function ScanPage() {
         { facingMode: 'environment' }, // Use back camera
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 },
+          // Remove qrbox to use full viewport for scanning
         },
         async (decodedText) => {
           // Barcode scanned successfully
@@ -688,15 +688,34 @@ export default function ScanPage() {
             }
           }}
         >
-          <div className="flex-1 flex items-center justify-center relative">
-            <div id="camera-container" ref={cameraContainerRef} className="w-full h-full"></div>
-            {/* Scanning overlay */}
+          <div className="flex-1 flex items-center justify-center relative overflow-hidden">
+            <div id="camera-container" ref={cameraContainerRef} className="absolute inset-0 w-full h-full object-cover"></div>
+            {/* Close button (X) in top-right corner */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                stopCamera();
+              }}
+              className="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 rounded-full p-2 transition-colors"
+              aria-label="Close camera"
+            >
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {/* Scanning overlay - white corner lines only */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="border-4 border-blue-500 rounded-lg" style={{ width: '250px', height: '250px' }}>
-                <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-500"></div>
-                <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-blue-500"></div>
-                <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-blue-500"></div>
-                <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-blue-500"></div>
+              <div className="relative" style={{ width: '250px', height: '250px' }}>
+                {/* Top-left corner */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white"></div>
+                {/* Top-right corner */}
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white"></div>
+                {/* Bottom-left corner */}
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white"></div>
+                {/* Bottom-right corner */}
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white"></div>
               </div>
             </div>
             <p className="absolute bottom-32 left-0 right-0 text-center text-white text-lg font-semibold">
