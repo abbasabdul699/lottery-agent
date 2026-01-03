@@ -34,22 +34,22 @@ export default async function handler(
       let descriptionIndex = -1;
 
       // Common header variations - handle lottery format specifically
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
       
       // Game # detection (handles "Game #", "Game Number", etc.)
-      gameNumberIndex = headers.findIndex(h => 
+      gameNumberIndex = headers.findIndex((h: string) => 
         (h.includes('game') && (h.includes('#') || h.includes('number') || h.includes('num'))) ||
         h === 'game #' || h === 'game#'
       );
       
       // Game Name detection (handles "Name" column)
-      gameNameIndex = headers.findIndex(h => 
+      gameNameIndex = headers.findIndex((h: string) => 
         h.includes('name') && !h.includes('game') ||
         (h.includes('game') && h.includes('name'))
       );
       
       // Price Point detection (handles "Price Point", "Price", "Cost", etc.)
-      costIndex = headers.findIndex(h => 
+      costIndex = headers.findIndex((h: string) => 
         h.includes('price point') || 
         h.includes('price') || 
         h.includes('cost') || 
@@ -57,12 +57,12 @@ export default async function handler(
       );
       
       // Tickets per Book (optional)
-      ticketsPerBookIndex = headers.findIndex(h => 
+      ticketsPerBookIndex = headers.findIndex((h: string) => 
         h.includes('ticket') && h.includes('book') ||
         h.includes('tickets per book')
       );
       
-      descriptionIndex = headers.findIndex(h => h.includes('description') || h.includes('desc'));
+      descriptionIndex = headers.findIndex((h: string) => h.includes('description') || h.includes('desc'));
 
       // If headers found, skip first line
       const dataLines = (gameNumberIndex >= 0 || gameNameIndex >= 0) ? lines.slice(1) : lines;
