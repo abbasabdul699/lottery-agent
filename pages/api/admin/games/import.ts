@@ -23,7 +23,7 @@ export default async function handler(
 
     // Parse CSV
     if (fileType === 'text/csv' || fileType === 'application/vnd.ms-excel' || fileContent.includes(',')) {
-      const lines = fileContent.split('\n').filter(line => line.trim());
+      const lines = fileContent.split('\n').filter((line: string) => line.trim());
       
       // Try to detect header row
       const firstLine = lines[0].toLowerCase();
