@@ -190,7 +190,7 @@ export default function Dashboard() {
         {/* Summary Stats */}
         {summary && (
           <div className="bg-white rounded-lg shadow-md p-4">
-            <h2 className="text-xl font-bold mb-3 text-black">Today's Summary</h2>
+            <h2 className="text-xl font-bold mb-3 text-black">Today&apos;s Summary</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-600">Total Revenue</p>
