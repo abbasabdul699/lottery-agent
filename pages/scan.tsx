@@ -331,21 +331,41 @@ export default function ScanPage() {
     setShowCamera(false);
   };
 
+  const stopCameraOnly = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        await html5QrCodeRef.current.stop();
+        await html5QrCodeRef.current.clear();
+      } catch (error) {
+        // Ignore errors when stopping
+      }
+      html5QrCodeRef.current = null;
+    }
+    setCameraScanning(false);
+  };
+
   useEffect(() => {
     if (showCamera) {
       // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        if (cameraContainerRef.current) {
+      const timer = setTimeout(() => {
+        if (cameraContainerRef.current && showCamera) {
           startCamera();
         }
       }, 100);
+      
+      return () => {
+        clearTimeout(timer);
+        // Only stop camera hardware, don't change state in cleanup
+        if (html5QrCodeRef.current) {
+          stopCameraOnly();
+        }
+      };
     } else {
-      stopCamera();
+      // Only stop if camera is actually running
+      if (html5QrCodeRef.current) {
+        stopCameraOnly();
+      }
     }
-
-    return () => {
-      stopCamera();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCamera]);
 
@@ -454,7 +474,11 @@ export default function ScanPage() {
               />
               <button
                 type="button"
-                onClick={() => setShowCamera(!showCamera)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowCamera(!showCamera);
+                }}
                 className={`px-4 py-3 rounded-lg font-semibold transition-colors ${
                   showCamera
                     ? 'bg-red-500 text-white hover:bg-red-600'
@@ -655,7 +679,15 @@ export default function ScanPage() {
 
       {/* Camera Scanner Modal */}
       {showCamera && (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+        <div 
+          className="fixed inset-0 bg-black z-50 flex flex-col"
+          onClick={(e) => {
+            // Only close if clicking the backdrop, not the camera container
+            if (e.target === e.currentTarget) {
+              stopCamera();
+            }
+          }}
+        >
           <div className="flex-1 flex items-center justify-center relative">
             <div id="camera-container" ref={cameraContainerRef} className="w-full h-full"></div>
             {/* Scanning overlay */}
@@ -673,7 +705,12 @@ export default function ScanPage() {
           </div>
           <div className="bg-gray-900 p-4 flex justify-center">
             <button
-              onClick={stopCamera}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                stopCamera();
+              }}
               className="px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition-colors"
             >
               Close Camera
