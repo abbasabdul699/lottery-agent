@@ -3,9 +3,9 @@ import Image from 'next/image';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex flex-col md:flex-row">
       {/* Left Sidebar - Dark Green */}
-      <div className="w-full md:w-1/3 lg:w-1/4 bg-[#2683EB] text-white p-8 flex flex-col justify-between min-h-screen md:sticky md:top-0 md:h-screen md:overflow-y-auto">
+      <div className="w-full md:w-1/3 lg:w-1/4 bg-[#2683EB] text-white p-8 flex flex-col justify-between md:min-h-screen md:sticky md:top-0 md:h-screen md:overflow-y-auto">
         {/* Top Section */}
         <div>
           {/* Logo and Get Started Button */}
