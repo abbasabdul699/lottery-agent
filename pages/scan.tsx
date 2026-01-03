@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/router';
 import { format } from 'date-fns';
 
 interface Ticket {
@@ -12,29 +11,27 @@ interface Ticket {
 }
 
 export default function ScanPage() {
-  const router = useRouter();
   const [ticketNumber, setTicketNumber] = useState('');
-  const [ticketType, setTicketType] = useState('lottery');
-  const [amount, setAmount] = useState('');
-  const [scannedBy, setScannedBy] = useState('');
-  const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [todayTickets, setTodayTickets] = useState<Ticket[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const inputRef = useRef<HTMLInputElement>(null);
+  const calendarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchTodayTickets();
+    fetchTodayTickets(selectedDate);
     // Focus on ticket number input
     if (inputRef.current) {
       inputRef.current.focus();
     }
-  }, []);
+  }, [selectedDate]);
 
-  const fetchTodayTickets = async () => {
+  const fetchTodayTickets = async (date?: Date) => {
     try {
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const response = await fetch(`/api/tickets?date=${today}`);
+      const dateToUse = date || selectedDate;
+      const dateStr = format(dateToUse, 'yyyy-MM-dd');
+      const response = await fetch(`/api/tickets?date=${dateStr}`);
       const data = await response.json();
       if (data.success) {
         setTodayTickets(data.tickets);
@@ -44,11 +41,39 @@ export default function ScanPage() {
     }
   };
 
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = new Date(e.target.value);
+    setSelectedDate(newDate);
+    fetchTodayTickets(newDate);
+  };
+
+  const handleDateClick = () => {
+    setTimeout(() => {
+      if (calendarRef.current) {
+        const button = document.querySelector('[data-date-button]') as HTMLElement;
+        if (button) {
+          const rect = button.getBoundingClientRect();
+          calendarRef.current.style.position = 'fixed';
+          calendarRef.current.style.top = `${rect.bottom + 5}px`;
+          calendarRef.current.style.right = `${window.innerWidth - rect.right}px`;
+          calendarRef.current.style.width = '1px';
+          calendarRef.current.style.height = '1px';
+          calendarRef.current.style.opacity = '0';
+        }
+        calendarRef.current.focus();
+        calendarRef.current.click();
+        if (typeof calendarRef.current.showPicker === 'function') {
+          calendarRef.current.showPicker();
+        }
+      }
+    }, 50);
+  };
+
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!ticketNumber || !amount || !scannedBy) {
-      alert('Please fill in all required fields');
+    if (!ticketNumber) {
+      alert('Please enter a ticket number');
       return;
     }
 
@@ -63,10 +88,10 @@ export default function ScanPage() {
         },
         body: JSON.stringify({
           ticketNumber,
-          ticketType,
-          amount: parseFloat(amount),
-          scannedBy,
-          notes,
+          ticketType: 'lottery', // Default value
+          amount: 0, // Default value, will be updated later
+          scannedBy: 'system', // Default value, will be replaced with logged-in user later
+          date: format(selectedDate, 'yyyy-MM-dd'),
         }),
       });
 
@@ -75,8 +100,6 @@ export default function ScanPage() {
       if (data.success) {
         setSuccess(true);
         setTicketNumber('');
-        setAmount('');
-        setNotes('');
         fetchTodayTickets();
         
         // Auto-focus back to ticket number input
@@ -112,15 +135,30 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <button
-          onClick={() => router.back()}
-          className="mb-2 text-sm underline"
-        >
-          ← Back
-        </button>
-        <h1 className="text-2xl font-bold">Scan Ticket</h1>
+        <div className="flex justify-end items-start">
+          <div className="text-right">
+            <h1 className="text-2xl font-bold">Scan Ticket</h1>
+            <button
+              onClick={handleDateClick}
+              data-date-button
+              className="cursor-pointer hover:opacity-80 transition-opacity mt-1"
+            >
+              <p className="text-base text-white font-bold">
+                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+              </p>
+            </button>
+            <input
+              ref={calendarRef}
+              type="date"
+              value={format(selectedDate, 'yyyy-MM-dd')}
+              onChange={handleDateChange}
+              className="absolute opacity-0 w-0 h-0"
+              aria-label="Select date"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
@@ -138,65 +176,6 @@ export default function ScanPage() {
               placeholder="Scan or enter ticket number"
               required
               autoFocus
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Ticket Type *
-            </label>
-            <select
-              value={ticketType}
-              onChange={(e) => setTicketType(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg text-lg"
-              required
-            >
-              <option value="lottery">Lottery</option>
-              <option value="scratch-off">Scratch-Off</option>
-              <option value="instant">Instant</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount ($) *
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg text-lg"
-              placeholder="0.00"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Scanned By *
-            </label>
-            <input
-              type="text"
-              value={scannedBy}
-              onChange={(e) => setScannedBy(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg text-lg"
-              placeholder="Employee name"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes (Optional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              rows={2}
-              placeholder="Additional notes..."
             />
           </div>
 
@@ -218,7 +197,9 @@ export default function ScanPage() {
         {/* Today's Scanned Tickets */}
         <div className="bg-white rounded-lg shadow-md p-4">
           <h2 className="text-xl font-bold mb-3">
-            Today&apos;s Tickets ({todayTickets.length})
+            {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+              ? `Today's Tickets (${todayTickets.length})`
+              : `${format(selectedDate, 'MMM d')} Tickets (${todayTickets.length})`}
           </h2>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {todayTickets.length === 0 ? (
@@ -232,16 +213,10 @@ export default function ScanPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="font-semibold">{ticket.ticketNumber}</p>
-                      <p className="text-sm text-gray-600">
-                        {ticket.ticketType} • {ticket.scannedBy}
-                      </p>
                       <p className="text-xs text-gray-500">
                         {format(new Date(ticket.scannedAt), 'h:mm a')}
                       </p>
                     </div>
-                    <p className="font-bold text-green-600">
-                      ${ticket.amount.toFixed(2)}
-                    </p>
                   </div>
                 </div>
               ))

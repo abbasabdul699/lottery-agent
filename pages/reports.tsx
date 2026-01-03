@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
 import { format, parseISO } from 'date-fns';
 
 interface Report {
@@ -14,7 +13,6 @@ interface Report {
 }
 
 export default function ReportsPage() {
-  const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -63,14 +61,8 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <button
-          onClick={() => router.back()}
-          className="mb-2 text-sm underline"
-        >
-          ← Back
-        </button>
         <h1 className="text-2xl font-bold">Daily Reports</h1>
       </div>
 

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/router';
 import { format } from 'date-fns';
 
 interface DailyLotteryReport {
@@ -28,7 +27,6 @@ interface DailyLotteryReport {
 }
 
 export default function DailyReportPage() {
-  const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -295,16 +293,9 @@ export default function DailyReportPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-blue-600 text-white p-4 shadow-md">
-        <div className="flex justify-between items-start mb-2">
-          <button
-            onClick={() => router.back()}
-            className="px-4 py-2 rounded-full border-2 border-blue-400 bg-white text-blue-400 font-medium flex items-center gap-2 hover:bg-teal-50 active:bg-blue-100 transition-colors"
-          >
-            <span>←</span>
-            <span>Back</span>
-          </button>
+        <div className="flex justify-end items-start mb-2">
           <div className="text-right relative">
             <h1 className="text-2xl font-bold">Daily Lottery Report</h1>
             <button

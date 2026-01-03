@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import connectDB from '@/lib/mongodb';
 import Ticket from '@/models/Ticket';
+import { parseISO, startOfDay } from 'date-fns';
 
 export default async function handler(
   req: NextApiRequest,
@@ -13,19 +14,22 @@ export default async function handler(
   try {
     await connectDB();
 
-    const { ticketNumber, ticketType, amount, scannedBy, notes } = req.body;
+    const { ticketNumber, ticketType, amount, scannedBy, notes, date } = req.body;
 
-    if (!ticketNumber || !ticketType || !amount || !scannedBy) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!ticketNumber) {
+      return res.status(400).json({ error: 'Ticket number is required' });
     }
 
-    // Create ticket with today's date
+    // Use provided date or default to today
+    const ticketDate = date ? startOfDay(parseISO(date)) : startOfDay(new Date());
+
+    // Create ticket with specified date
     const ticket = await Ticket.create({
       ticketNumber: ticketNumber.toString(),
-      ticketType,
-      amount: parseFloat(amount),
-      scannedBy,
-      date: new Date(),
+      ticketType: ticketType || 'lottery',
+      amount: amount ? parseFloat(amount) : 0,
+      scannedBy: scannedBy || 'system',
+      date: ticketDate,
       notes: notes || '',
     });
 
