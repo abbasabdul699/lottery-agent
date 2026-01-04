@@ -807,58 +807,20 @@ export default function ScanPage() {
         // Then try variations that might work better for complex images with surrounding text
         
         try {
-          // First attempt: QR code format only - most reliable for QR codes
+          // First attempt: Simple scan without showScanRegion
           // Works for images that are just QR codes
-          decodedText = await tempScanner.scanFile(
-            file, 
-            false,
-            {
-              formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
-            }
-          );
-        } catch (qrError: any) {
-          console.log('QR code only scan failed, trying with showScanRegion...', qrError);
+          decodedText = await tempScanner.scanFile(file, false);
+        } catch (simpleError: any) {
+          console.log('Simple scan failed, trying with showScanRegion...', simpleError);
           
-          // Second attempt: QR code with showScanRegion enabled
+          // Second attempt: Enable showScanRegion
           // This can help focus scanning in complex images with surrounding content
           try {
-            decodedText = await tempScanner.scanFile(
-              file, 
-              true, // Enable showScanRegion
-              {
-                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
-              }
-            );
-          } catch (qrRegionError: any) {
-            console.log('QR with region failed, trying all default formats...', qrRegionError);
-            
-            // Third attempt: All default formats (no format restriction)
-            // Sometimes the library's default format detection works better
-            try {
-              decodedText = await tempScanner.scanFile(file, false);
-            } catch (defaultError: any) {
-              console.log('Default formats failed, trying all formats with region...', defaultError);
-              
-              // Fourth attempt: All formats with showScanRegion
-              try {
-                decodedText = await tempScanner.scanFile(file, true);
-              } catch (regionAllError: any) {
-                console.log('All formats with region failed, trying specific formats...', regionAllError);
-                
-                // Final attempt: Multiple specific formats
-                decodedText = await tempScanner.scanFile(
-                  file,
-                  false,
-                  {
-                    formatsToSupport: [
-                      Html5QrcodeSupportedFormats.QR_CODE,
-                      Html5QrcodeSupportedFormats.CODE_128,
-                      Html5QrcodeSupportedFormats.EAN_13,
-                    ]
-                  }
-                );
-              }
-            }
+            decodedText = await tempScanner.scanFile(file, true);
+          } catch (regionError: any) {
+            console.log('Scan with showScanRegion also failed', regionError);
+            // If both attempts fail, throw the last error
+            throw regionError;
           }
         }
           
