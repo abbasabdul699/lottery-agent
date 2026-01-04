@@ -467,17 +467,8 @@ export default function ScanPage() {
         { facingMode: facingMode }, // Use selected camera (back or front)
         {
           fps: 10,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.CODE_93,
-          ],
-          // Remove qrbox to use full viewport for scanning
+          // Note: formatsToSupport is only available for scanFile, not for camera start
+          // Camera scanning automatically supports all formats
         },
         async (decodedText) => {
           // Prevent duplicate scans - check if we're already processing or recently scanned this barcode
