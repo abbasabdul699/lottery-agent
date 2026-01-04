@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import Image from 'next/image';
 import React from 'react';
+import { useSharedDate } from '@/lib/useSharedDate';
 
 interface DailyLotteryReport {
   _id?: string;
@@ -118,7 +119,7 @@ const InputField = React.memo(({ label, field, value, showHelp = true, onHelpCli
 InputField.displayName = 'InputField';
 
 export default function DailyReportPage() {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useSharedDate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -271,31 +272,27 @@ export default function DailyReportPage() {
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
-    setSelectedDate(newDate);
+    // Parse date string manually to avoid timezone issues
+    // Split "YYYY-MM-DD" and create date in local timezone
+    const dateStr = e.target.value;
+    if (dateStr) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const newDate = new Date(year, month - 1, day); // month is 0-indexed
+      setSelectedDate(newDate);
+    }
   };
 
   const handleDateClick = () => {
-    setTimeout(() => {
-      if (calendarRef.current) {
-        // Position the input near the button for better mobile calendar positioning
-        const button = document.querySelector('[data-date-button]') as HTMLElement;
-        if (button) {
-          const rect = button.getBoundingClientRect();
-          calendarRef.current.style.position = 'fixed';
-          calendarRef.current.style.top = `${rect.bottom + 5}px`;
-          calendarRef.current.style.right = `${window.innerWidth - rect.right}px`;
-          calendarRef.current.style.width = '1px';
-          calendarRef.current.style.height = '1px';
-          calendarRef.current.style.opacity = '0';
-        }
-        calendarRef.current.focus();
+    if (calendarRef.current) {
+      calendarRef.current.focus();
+      // Try to show picker if available (modern browsers)
+      if (typeof calendarRef.current.showPicker === 'function') {
+        calendarRef.current.showPicker();
+      } else {
+        // Fallback: click the input directly
         calendarRef.current.click();
-        if (typeof calendarRef.current.showPicker === 'function') {
-          calendarRef.current.showPicker();
-        }
       }
-    }, 50);
+    }
   };
 
   const saveReport = async () => {
@@ -370,7 +367,7 @@ export default function DailyReportPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-blue-600 text-white p-4 shadow-md">
+      <div className="bg-blue-600 text-white shadow-md" style={{ paddingTop: `calc(env(safe-area-inset-top, 0px) + 1rem)`, paddingBottom: '1rem', paddingLeft: '1rem', paddingRight: '1rem' }}>
         <div className="flex justify-between items-center">
           <div className="flex items-center">
             <Image 
@@ -383,24 +380,25 @@ export default function DailyReportPage() {
           </div>
           <div className="text-right relative">
             <h1 className="text-2xl font-bold">Daily Lottery Report</h1>
-            <button
-              onClick={handleDateClick}
-              data-date-button
-              className="cursor-pointer hover:opacity-80 transition-opacity mt-1 relative"
-            >
-              <p className="text-base text-white font-bold">
-                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
-              </p>
-            </button>
-            <input
-              ref={calendarRef}
-              type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
-              onChange={handleDateChange}
-              className="absolute top-full right-0 mt-1 opacity-0 pointer-events-none w-1 h-1"
-              style={{ position: 'fixed', top: 'auto', right: 'auto' }}
-              aria-label="Select date"
-            />
+            <div className="relative inline-block mt-1">
+              <button
+                onClick={handleDateClick}
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                <p className="text-base text-white font-bold">
+                  {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                </p>
+              </button>
+              <input
+                ref={calendarRef}
+                type="date"
+                value={format(selectedDate, 'yyyy-MM-dd')}
+                onChange={handleDateChange}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                style={{ width: '100%', height: '100%' }}
+                aria-label="Select date"
+              />
+            </div>
           </div>
         </div>
       </div>

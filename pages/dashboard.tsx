@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
 import { format } from 'date-fns';
+import { useSharedDate } from '@/lib/useSharedDate';
 
 interface SummaryData {
   totalRevenue: number;
@@ -38,7 +39,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useSharedDate();
   const [showCalendar, setShowCalendar] = useState(false);
   const [checklistStatus, setChecklistStatus] = useState<ChecklistStatus | null>(null);
   const calendarRef = useRef<HTMLInputElement>(null);
@@ -79,6 +80,11 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [router]);
 
+  // Refetch checklist when date changes
+  useEffect(() => {
+    fetchChecklistStatus();
+  }, [selectedDate]);
+
   const fetchSummary = async () => {
     try {
       const response = await fetch('/api/reports/summary?days=7');
@@ -108,10 +114,16 @@ export default function Dashboard() {
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
-    setSelectedDate(newDate);
-    setShowCalendar(false);
-    fetchChecklistStatus(newDate);
+    // Parse date string manually to avoid timezone issues
+    // Split "YYYY-MM-DD" and create date in local timezone
+    const dateStr = e.target.value;
+    if (dateStr) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const newDate = new Date(year, month - 1, day); // month is 0-indexed
+      setSelectedDate(newDate);
+      setShowCalendar(false);
+      fetchChecklistStatus(newDate);
+    }
   };
 
   const handleDateClick = () => {

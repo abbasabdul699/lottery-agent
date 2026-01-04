@@ -4,6 +4,8 @@ import Image from 'next/image';
 import { format } from 'date-fns';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { parseBarcode, formatParsedBarcode, ParsedBarcode } from '@/lib/barcodeParser';
+import { haptic } from 'ios-haptics';
+import { useSharedDate } from '@/lib/useSharedDate';
 
 interface Ticket {
   _id: string;
@@ -25,10 +27,19 @@ export default function ScanPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState(false);
+  const [cameraScanSuccess, setCameraScanSuccess] = useState(false);
+  const [cameraScanError, setCameraScanError] = useState(false);
+  const [cameraScanMessage, setCameraScanMessage] = useState('');
   const [todayTickets, setTodayTickets] = useState<Ticket[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useSharedDate();
   const [showCamera, setShowCamera] = useState(false);
   const [cameraScanning, setCameraScanning] = useState(false);
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [sessionScanCount, setSessionScanCount] = useState(0);
+  const [lastScannedTicket, setLastScannedTicket] = useState<Ticket | null>(null);
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const [showFocusIndicator, setShowFocusIndicator] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [ticketToDelete, setTicketToDelete] = useState<Ticket | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -37,6 +48,9 @@ export default function ScanPage() {
   const autoSubmitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const cameraContainerRef = useRef<HTMLDivElement>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const lastScannedRef = useRef<{ barcode: string; timestamp: number } | null>(null);
+  const isProcessingScanRef = useRef<boolean>(false);
 
   useEffect(() => {
     // Check authentication and role
@@ -125,31 +139,89 @@ export default function ScanPage() {
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
-    setSelectedDate(newDate);
-    fetchTodayTickets(newDate);
+    // Parse date string manually to avoid timezone issues
+    // Split "YYYY-MM-DD" and create date in local timezone
+    const dateStr = e.target.value;
+    if (dateStr) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const newDate = new Date(year, month - 1, day); // month is 0-indexed
+      setSelectedDate(newDate);
+      fetchTodayTickets(newDate);
+    }
+  };
+
+  // Audio feedback fallback function
+  const triggerAudioFeedback = () => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = 400; // Slightly higher frequency for error sound
+      gainNode.gain.value = 0.15; // Low volume
+      
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.1); // Short beep
+    } catch (audioError) {
+      // Audio feedback also failed, silently continue
+      console.log('Audio feedback not available');
+    }
+  };
+
+  // Haptic feedback helper function with Safari/iOS compatibility
+  const triggerHapticFeedback = () => {
+    // Try standard Vibration API first (works on Android and some browsers)
+    if (navigator.vibrate) {
+      try {
+        navigator.vibrate(200);
+        return;
+      } catch (e) {
+        // Vibration API failed, continue to fallback
+      }
+    }
+    
+    // Safari/iOS fallback: Try multiple methods for haptic feedback
+    try {
+      // Check if we're on iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      
+      if (isIOS) {
+        // Use ios-haptics library for iOS Safari (works on iOS 17.4+)
+        try {
+          haptic.error(); // Error haptic (three rapid haptics) for duplicate detection
+        } catch (hapticError) {
+          // If ios-haptics fails, try audio feedback
+          triggerAudioFeedback();
+        }
+      } else {
+        // For non-iOS browsers, try audio feedback as fallback
+        triggerAudioFeedback();
+      }
+    } catch (e) {
+      // Fallback failed, silently continue
+      console.log('Haptic feedback not available');
+    }
   };
 
   const handleDateClick = () => {
-    setTimeout(() => {
-      if (calendarRef.current) {
-        const button = document.querySelector('[data-date-button]') as HTMLElement;
-        if (button) {
-          const rect = button.getBoundingClientRect();
-          calendarRef.current.style.position = 'fixed';
-          calendarRef.current.style.top = `${rect.bottom + 5}px`;
-          calendarRef.current.style.right = `${window.innerWidth - rect.right}px`;
-          calendarRef.current.style.width = '1px';
-          calendarRef.current.style.height = '1px';
-          calendarRef.current.style.opacity = '0';
-        }
-        calendarRef.current.focus();
-        calendarRef.current.click();
-        if (typeof calendarRef.current.showPicker === 'function') {
+    // Directly trigger the date input
+    if (calendarRef.current) {
+      calendarRef.current.focus();
+      calendarRef.current.click();
+      // Try showPicker for browsers that support it
+      if (typeof calendarRef.current.showPicker === 'function') {
+        try {
           calendarRef.current.showPicker();
+        } catch (e) {
+          // Fallback to click if showPicker fails
+          calendarRef.current.click();
         }
       }
-    }, 50);
+    }
   };
 
   const handleScan = async (e?: React.FormEvent, ticketValue?: string) => {
@@ -223,6 +295,9 @@ export default function ScanPage() {
           setTicketNumber('');
           setParsedBarcode(null);
           
+          // Haptic feedback - vibrate phone for duplicate detection
+          triggerHapticFeedback();
+          
           // Auto-focus back to ticket number input
           setTimeout(() => {
             if (inputRef.current) {
@@ -263,23 +338,154 @@ export default function ScanPage() {
     return null;
   };
 
+  const handleScanFromCamera = async (decodedText: string, parsed: ParsedBarcode) => {
+    setLoading(true);
+    setCameraScanSuccess(false);
+    setCameraScanError(false);
+    setCameraScanMessage('');
+
+    // Get current user for scannedBy
+    const userStr = localStorage.getItem('user');
+    let scannedBy = 'system';
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        scannedBy = user.name || user.email || 'system';
+      } catch (e) {
+        // Use default
+      }
+    }
+
+    try {
+      const response = await fetch('/api/tickets/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticketNumber: parsed.ticketNumber || decodedText,
+          ticketType: parsed.ticketType || 'lottery',
+          amount: parsed.costPerTicket || 0,
+          scannedBy,
+          date: format(selectedDate, 'yyyy-MM-dd'),
+          gameBook: parsed.gameBook,
+          gameNumber: parsed.gameNumber,
+          gameName: parsed.gameName,
+          costPerTicket: parsed.costPerTicket,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCameraScanSuccess(true);
+        setCameraScanMessage('Ticket scanned successfully!');
+        setTicketNumber('');
+        setParsedBarcode(null);
+        setSessionScanCount(prev => prev + 1);
+        
+        // Store the last scanned ticket for preview
+        if (data.ticket) {
+          setLastScannedTicket(data.ticket);
+        }
+        
+        fetchTodayTickets();
+        
+        // Clear success message after 2 seconds
+        setTimeout(() => {
+          setCameraScanSuccess(false);
+          setCameraScanMessage('');
+        }, 2000);
+      } else {
+        // Handle duplicate tickets
+        if (data.isDuplicate) {
+          setCameraScanError(true);
+          setCameraScanMessage('This ticket was already scanned');
+          setTicketNumber('');
+          setParsedBarcode(null);
+          
+          // Haptic feedback - vibrate phone for duplicate detection
+          triggerHapticFeedback();
+          
+          // Clear error message after 3 seconds
+          setTimeout(() => {
+            setCameraScanError(false);
+            setCameraScanMessage('');
+          }, 3000);
+        } else {
+          setCameraScanError(true);
+          setCameraScanMessage(data.error || 'Failed to scan ticket');
+          
+          // Clear error message after 3 seconds
+          setTimeout(() => {
+            setCameraScanError(false);
+            setCameraScanMessage('');
+          }, 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Error scanning ticket:', error);
+      setCameraScanError(true);
+      setCameraScanMessage('Failed to scan ticket');
+      
+      // Clear error message after 3 seconds
+      setTimeout(() => {
+        setCameraScanError(false);
+        setCameraScanMessage('');
+      }, 3000);
+    } finally {
+      setLoading(false);
+      // Reset processing flag
+      isProcessingScanRef.current = false;
+    }
+  };
+
   const startCamera = async () => {
     if (!cameraContainerRef.current || html5QrCodeRef.current) return;
 
     try {
       setCameraScanning(true);
+      // Reset scan tracking when starting camera
+      lastScannedRef.current = null;
+      isProcessingScanRef.current = false;
+      setSessionScanCount(0);
+      setLastScannedTicket(null); // Reset last scanned ticket preview
+      
       const html5QrCode = new Html5Qrcode('camera-container');
       html5QrCodeRef.current = html5QrCode;
 
       await html5QrCode.start(
-        { facingMode: 'environment' }, // Use back camera
+        { facingMode: facingMode }, // Use selected camera (back or front)
         {
           fps: 10,
           // Remove qrbox to use full viewport for scanning
         },
         async (decodedText) => {
-          // Barcode scanned successfully
-          await stopCamera();
+          // Prevent duplicate scans - check if we're already processing or recently scanned this barcode
+          const now = Date.now();
+          const cooldownPeriod = 3000; // 3 seconds cooldown
+          
+          // Check if we're currently processing a scan
+          if (isProcessingScanRef.current) {
+            return; // Ignore if already processing
+          }
+          
+          // Check if this is the same barcode scanned recently
+          if (lastScannedRef.current) {
+            const timeSinceLastScan = now - lastScannedRef.current.timestamp;
+            if (
+              lastScannedRef.current.barcode === decodedText &&
+              timeSinceLastScan < cooldownPeriod
+            ) {
+              return; // Ignore duplicate scan within cooldown period
+            }
+          }
+          
+          // Mark as processing
+          isProcessingScanRef.current = true;
+          lastScannedRef.current = { barcode: decodedText, timestamp: now };
+          
+          // Barcode scanned - don't close camera, just process the scan
           setTicketNumber(decodedText);
           
           // Parse and process the barcode
@@ -300,20 +506,46 @@ export default function ScanPage() {
           
           setParsedBarcode(parsed);
           
-          // Auto-submit after a short delay
-          setTimeout(() => {
-            handleScan(undefined, decodedText);
-          }, 300);
+          // Process the scan and show notification in camera
+          await handleScanFromCamera(decodedText, parsed);
         },
         (errorMessage) => {
           // Ignore scanning errors (they're frequent while scanning)
         }
       );
+
+      // Get the video track for flash control after camera starts
+      setTimeout(() => {
+        const videoElement = document.querySelector('#camera-container video') as HTMLVideoElement;
+        if (videoElement && videoElement.srcObject) {
+          const stream = videoElement.srcObject as MediaStream;
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrackRef.current = videoTrack;
+          }
+        }
+      }, 500);
     } catch (error: any) {
       console.error('Error starting camera:', error);
-      alert('Failed to start camera. Please check permissions.');
       setCameraScanning(false);
       setShowCamera(false);
+      
+      // Check if we're on HTTP (not HTTPS or localhost)
+      const isHttp = window.location.protocol === 'http:' && !window.location.hostname.includes('localhost');
+      
+      if (isHttp) {
+        alert('Camera access requires HTTPS or localhost. Safari on iOS blocks camera access on HTTP connections. Please use localhost or set up HTTPS for local development.');
+      } else {
+        // Check for specific permission errors
+        const errorMessage = error?.message || error?.toString() || '';
+        if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+          alert('Camera permission denied. Please allow camera access in your browser settings.');
+        } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('not found')) {
+          alert('No camera found. Please ensure your device has a camera.');
+        } else {
+          alert('Failed to start camera. Please check permissions and try again.');
+        }
+      }
     }
   };
 
@@ -341,7 +573,234 @@ export default function ScanPage() {
       }
       html5QrCodeRef.current = null;
     }
+    // Turn off flash when stopping
+    if (videoTrackRef.current) {
+      try {
+        await videoTrackRef.current.applyConstraints({ 
+          advanced: [{ torch: false }] as any 
+        });
+      } catch (error) {
+        // Ignore errors
+      }
+      videoTrackRef.current = null;
+    }
     setCameraScanning(false);
+    setFlashEnabled(false);
+  };
+
+  const handleCameraTap = async (e: React.MouseEvent<HTMLDivElement>) => {
+    // Don't trigger focus if clicking on buttons or other interactive elements
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button')) {
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100; // Percentage from left
+    const y = ((e.clientY - rect.top) / rect.height) * 100; // Percentage from top
+
+    // Show focus indicator
+    setFocusPoint({ x, y });
+    setShowFocusIndicator(true);
+
+    // Hide indicator after animation
+    setTimeout(() => {
+      setShowFocusIndicator(false);
+    }, 1000);
+
+    // Apply focus to camera
+    if (!videoTrackRef.current) {
+      // Try to get the video track again
+      const videoElement = document.querySelector('#camera-container video') as HTMLVideoElement;
+      if (videoElement && videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrackRef.current = videoTrack;
+        } else {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    try {
+      // Convert percentage to normalized coordinates (0.0 to 1.0)
+      const pointOfInterestX = x / 100;
+      const pointOfInterestY = y / 100;
+
+      // Try different focus methods based on browser support
+      const capabilities = videoTrackRef.current.getCapabilities();
+      
+      // Method 1: Try pointsOfInterest (some mobile browsers)
+      try {
+        await videoTrackRef.current.applyConstraints({
+          advanced: [
+            {
+              pointsOfInterest: [{ x: pointOfInterestX, y: pointOfInterestY }]
+            } as any
+          ]
+        });
+      } catch (poiError) {
+        // Method 2: Try focusMode with manual focus
+        try {
+          await videoTrackRef.current.applyConstraints({
+            advanced: [{ focusMode: 'manual' } as any]
+          });
+          // Then try to set the point of interest
+          await videoTrackRef.current.applyConstraints({
+            advanced: [
+              {
+                pointsOfInterest: [{ x: pointOfInterestX, y: pointOfInterestY }]
+              } as any
+            ]
+          });
+        } catch (manualError) {
+          // Method 3: Just trigger auto-focus (fallback)
+          try {
+            await videoTrackRef.current.applyConstraints({
+              advanced: [{ focusMode: 'auto' } as any]
+            });
+          } catch (autoError) {
+            console.log('Focus not supported on this device');
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Focus not supported on this device');
+    }
+  };
+
+  const toggleCamera = async () => {
+    // Toggle between front and back camera
+    const newFacingMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(newFacingMode);
+    
+    // Stop current camera
+    if (html5QrCodeRef.current) {
+      try {
+        await html5QrCodeRef.current.stop();
+        await html5QrCodeRef.current.clear();
+      } catch (error) {
+        console.error('Error stopping camera:', error);
+      }
+      html5QrCodeRef.current = null;
+    }
+    
+    // Reset video track ref
+    if (videoTrackRef.current) {
+      try {
+        await videoTrackRef.current.applyConstraints({ 
+          advanced: [{ torch: false }] as any 
+        });
+      } catch (error) {
+        // Ignore errors
+      }
+      videoTrackRef.current = null;
+    }
+    
+    setFlashEnabled(false);
+    setCameraScanning(false);
+    
+    // Restart camera with new facing mode
+    setTimeout(() => {
+      startCamera();
+    }, 300);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check if it's an image
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Use html5-qrcode to scan the image file directly
+      if (!html5QrCodeRef.current) {
+        const html5QrCode = new Html5Qrcode('camera-container');
+        html5QrCodeRef.current = html5QrCode;
+      }
+      
+      try {
+        const decodedText = await html5QrCodeRef.current.scanFile(file, false);
+          
+        if (decodedText) {
+          // Parse and process the barcode
+          const parsed = parseBarcode(decodedText);
+          
+          // Fetch game data if available
+          if (parsed.gameNumber) {
+            const gameData = await fetchGameData(parsed.gameNumber);
+            if (gameData) {
+              if (!parsed.gameName || parsed.gameName === `Game ${parsed.gameNumber}`) {
+                parsed.gameName = gameData.gameName;
+              }
+              if (!parsed.costPerTicket && gameData.costPerTicket) {
+                parsed.costPerTicket = gameData.costPerTicket;
+              }
+            }
+          }
+          
+          // Process the scan
+          await handleScanFromCamera(decodedText, parsed);
+        } else {
+          alert('No barcode found in the image');
+        }
+      } catch (error: any) {
+        console.error('Error scanning image:', error);
+        if (error.message?.includes('No barcode') || error.message?.includes('not found')) {
+          alert('No barcode found in the image. Please try another image.');
+        } else {
+          alert('Failed to scan image. Please try again.');
+        }
+      } finally {
+        setLoading(false);
+        // Reset file input
+        e.target.value = '';
+      }
+    } catch (error) {
+      console.error('Error handling image upload:', error);
+      alert('Failed to process image');
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const toggleFlash = async () => {
+    if (!videoTrackRef.current) {
+      // Try to get the video track again
+      const videoElement = document.querySelector('#camera-container video') as HTMLVideoElement;
+      if (videoElement && videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream;
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrackRef.current = videoTrack;
+        } else {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    try {
+      const newFlashState = !flashEnabled;
+      await videoTrackRef.current.applyConstraints({
+        advanced: [{ torch: newFlashState }] as any
+      });
+      setFlashEnabled(newFlashState);
+    } catch (error) {
+      console.error('Error toggling flash:', error);
+      // Flash might not be supported on this device
+      alert('Flash/torch is not supported on this device or camera.');
+    }
   };
 
   useEffect(() => {
@@ -378,8 +837,8 @@ export default function ScanPage() {
     }
     
     // Remove any newline/carriage return characters (scanner might add these)
-    const cleanValue = value.replace(/[\n\r]/g, '');
-    setTicketNumber(cleanValue);
+      const cleanValue = value.replace(/[\n\r]/g, '');
+      setTicketNumber(cleanValue);
     
     // Parse the barcode to extract information
     const parsed = parseBarcode(cleanValue);
@@ -433,24 +892,25 @@ export default function ScanPage() {
           </div>
           <div className="text-right relative">
             <h1 className="text-2xl font-bold">Scan Ticket</h1>
-            <button
-              onClick={handleDateClick}
-              data-date-button
-              className="cursor-pointer hover:opacity-80 transition-opacity mt-1"
-            >
-              <p className="text-base text-white font-bold">
-                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
-              </p>
-            </button>
-            <input
-              ref={calendarRef}
-              type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
-              onChange={handleDateChange}
-              className="absolute opacity-0 pointer-events-none"
-              style={{ right: 0, top: 0, width: '200px', height: '60px' }}
-              aria-label="Select date"
-            />
+            <div className="relative inline-block mt-1">
+              <button
+                onClick={handleDateClick}
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                <p className="text-base text-white font-bold">
+                  {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                </p>
+              </button>
+              <input
+                ref={calendarRef}
+                type="date"
+                value={format(selectedDate, 'yyyy-MM-dd')}
+                onChange={handleDateChange}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                style={{ width: '100%', height: '100%' }}
+                aria-label="Select date"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -567,10 +1027,10 @@ export default function ScanPage() {
         <div className="bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-xl font-bold text-gray-900">
-              {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+            {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
                 ? "Books Scanned"
                 : `${format(selectedDate, 'MMM d')} Tickets`}
-            </h2>
+          </h2>
             <span className="text-sm font-semibold text-purple-700 bg-purple-100 px-3 py-1.5 rounded-full border border-purple-300">
               Total Scanned: {todayTickets.length}
             </span>
@@ -688,8 +1148,51 @@ export default function ScanPage() {
             }
           }}
         >
+          <style dangerouslySetInnerHTML={{
+            __html: `
+              #camera-container {
+                width: 100% !important;
+                height: 100% !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                overflow: hidden !important;
+              }
+              #camera-container video {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: cover !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+              }
+            `
+          }} />
           <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-            <div id="camera-container" ref={cameraContainerRef} className="absolute inset-0 w-full h-full object-cover"></div>
+            <div 
+              id="camera-container" 
+              ref={cameraContainerRef} 
+              className="absolute inset-0 w-full h-full cursor-pointer"
+              onClick={handleCameraTap}
+            />
+            {/* Focus indicator */}
+            {showFocusIndicator && focusPoint && (
+              <div
+                className="absolute z-30 pointer-events-none"
+                style={{
+                  left: `${focusPoint.x}%`,
+                  top: `${focusPoint.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                <div className="w-20 h-20 border-2 border-white rounded-full animate-ping"></div>
+                <div className="absolute inset-0 w-20 h-20 border-2 border-white rounded-full"></div>
+              </div>
+            )}
             {/* Close button (X) in top-right corner */}
             <button
               type="button"
@@ -698,13 +1201,85 @@ export default function ScanPage() {
                 e.stopPropagation();
                 stopCamera();
               }}
-              className="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 rounded-full p-2 transition-colors"
+              className="absolute top-4 right-4 z-10 bg-black hover:bg-black/90 rounded-full p-2 transition-colors"
               aria-label="Close camera"
             >
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+            {/* Flash/Torch button in top-left corner */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleFlash();
+              }}
+              className="absolute top-4 left-4 z-10 bg-yellow-500 hover:bg-yellow-600 rounded-full p-3 transition-colors"
+              aria-label={flashEnabled ? 'Turn off flash' : 'Turn on flash'}
+            >
+              {flashEnabled ? (
+                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C9.2 2 6 5.2 6 9c0 2.9 1.4 5.4 3.5 7l-1.1 4.4c-.1.3.1.6.4.6h6.4c.3 0 .5-.3.4-.6L14.5 16c2.1-1.6 3.5-4.1 3.5-7 0-3.8-3.2-7-7-7z"/>
+                </svg>
+              ) : (
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              )}
+            </button>
+            {/* Camera flip button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleCamera();
+              }}
+              className="absolute top-20 left-4 z-10 bg-gray-700 hover:bg-gray-600 rounded-full p-3 transition-colors"
+              aria-label="Flip camera"
+            >
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            {/* Gallery/Photo picker */}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+              id="gallery-input"
+            />
+            <label
+              htmlFor="gallery-input"
+              className="absolute top-36 left-4 z-10 bg-purple-500 hover:bg-purple-600 rounded-full p-3 transition-colors cursor-pointer"
+            >
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </label>
+            {/* Scan Counter */}
+            <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-10 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center space-x-2">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-semibold text-sm">Scanned: {sessionScanCount}</span>
+            </div>
+            {/* Last scanned ticket preview */}
+            {lastScannedTicket && (
+              <div className="absolute top-28 left-1/2 transform -translate-x-1/2 z-10 bg-white/90 rounded-lg p-3 max-w-xs shadow-lg">
+                <p className="text-xs text-gray-600 mb-1">Last scanned:</p>
+                <p className="font-semibold text-gray-900">{lastScannedTicket.ticketNumber}</p>
+                {lastScannedTicket.gameName && (
+                  <p className="text-xs text-gray-500 mt-1">{lastScannedTicket.gameName}</p>
+                )}
+                {lastScannedTicket.costPerTicket && (
+                  <p className="text-xs text-blue-600 font-medium mt-1">${lastScannedTicket.costPerTicket.toFixed(2)}</p>
+                )}
+              </div>
+            )}
             {/* Scanning overlay - white corner lines only */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="relative" style={{ width: '250px', height: '250px' }}>
@@ -721,6 +1296,24 @@ export default function ScanPage() {
             <p className="absolute bottom-32 left-0 right-0 text-center text-white text-lg font-semibold">
               Position barcode within the frame
             </p>
+            {/* Camera scan notifications */}
+            {cameraScanSuccess && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-green-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center justify-center space-x-2">
+                <svg className="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <p className="text-white font-semibold text-sm whitespace-nowrap">{cameraScanMessage || 'Ticket scanned successfully!'}</p>
+              </div>
+            )}
+            {/* Error/Duplicate bubble at top */}
+            {cameraScanError && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-red-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center justify-center space-x-2">
+                <svg className="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <p className="text-white font-semibold text-sm whitespace-nowrap">{cameraScanMessage || 'Error scanning ticket'}</p>
+              </div>
+            )}
           </div>
           <div className="bg-gray-900 p-4 flex justify-center">
             <button
