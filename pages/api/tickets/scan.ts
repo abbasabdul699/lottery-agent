@@ -21,6 +21,17 @@ export default async function handler(
       return res.status(400).json({ error: 'Ticket number is required' });
     }
 
+    // Log the incoming data for debugging
+    console.log('Scan request received:', {
+      ticketNumber,
+      gameNumber,
+      gameBook,
+      gameName,
+      costPerTicket,
+      date,
+      rawBody: req.body
+    });
+
     // Use provided date or default to today
     const ticketDate = date ? startOfDay(parseISO(date)) : startOfDay(new Date());
 

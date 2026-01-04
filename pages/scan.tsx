@@ -43,6 +43,7 @@ export default function ScanPage() {
   const [ticketToDelete, setTicketToDelete] = useState<Ticket | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLInputElement>(null);
   const autoSubmitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -51,6 +52,11 @@ export default function ScanPage() {
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const lastScannedRef = useRef<{ barcode: string; timestamp: number } | null>(null);
   const isProcessingScanRef = useRef<boolean>(false);
+
+  // Prevent hydration mismatch by only rendering date after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     // Check authentication and role
@@ -309,8 +315,11 @@ export default function ScanPage() {
           setTimeout(() => {
             setDuplicateWarning(false);
           }, 3000);
-      } else {
-        alert(data.error || 'Failed to scan ticket');
+        } else {
+          // Show more detailed error message
+          const errorMsg = data.error || 'Failed to scan ticket';
+          console.error('Scan error:', { error: errorMsg, response: data, parsed: parsed });
+          alert(`Error: ${errorMsg}\n\nParsed data: ${JSON.stringify(parsed, null, 2)}`);
         }
       }
     } catch (error) {
@@ -458,6 +467,16 @@ export default function ScanPage() {
         { facingMode: facingMode }, // Use selected camera (back or front)
         {
           fps: 10,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
+          ],
           // Remove qrbox to use full viewport for scanning
         },
         async (decodedText) => {
@@ -550,6 +569,7 @@ export default function ScanPage() {
   };
 
   const stopCamera = async () => {
+    // Stop the QR code scanner
     if (html5QrCodeRef.current) {
       try {
         await html5QrCodeRef.current.stop();
@@ -559,7 +579,23 @@ export default function ScanPage() {
       }
       html5QrCodeRef.current = null;
     }
+    
+    // Turn off flash/torch when stopping
+    if (videoTrackRef.current) {
+      try {
+        await videoTrackRef.current.applyConstraints({ 
+          advanced: [{ torch: false }] as any 
+        });
+        videoTrackRef.current.stop(); // Stop the video track
+      } catch (error) {
+        // Ignore errors
+      }
+      videoTrackRef.current = null;
+    }
+    
+    // Update state to close camera and reset flags
     setCameraScanning(false);
+    setFlashEnabled(false);
     setShowCamera(false);
   };
 
@@ -722,14 +758,118 @@ export default function ScanPage() {
     try {
       setLoading(true);
       
-      // Use html5-qrcode to scan the image file directly
-      if (!html5QrCodeRef.current) {
-        const html5QrCode = new Html5Qrcode('camera-container');
-        html5QrCodeRef.current = html5QrCode;
+      // If camera is active, stop it first to avoid conflicts
+      if (html5QrCodeRef.current && cameraScanning) {
+        console.log('Stopping camera for image upload...');
+        try {
+          await html5QrCodeRef.current.stop();
+          await html5QrCodeRef.current.clear();
+          html5QrCodeRef.current = null;
+          setCameraScanning(false);
+          // Wait a moment for camera to fully stop
+          await new Promise(resolve => setTimeout(resolve, 300));
+        } catch (stopError) {
+          console.error('Error stopping camera:', stopError);
+        }
       }
       
+      // Create a temporary properly-sized container for file scanning
+      // Container must be in DOM and have proper dimensions for scanner to work
+      const tempContainerId = 'temp-scanner-container-' + Date.now(); // Unique ID to avoid conflicts
+      
+      // Remove any existing container with similar ID pattern
+      const existingContainers = document.querySelectorAll('[id^="temp-scanner-container-"]');
+      existingContainers.forEach(el => el.remove());
+      
+      const tempContainer = document.createElement('div');
+      tempContainer.id = tempContainerId;
+      // Make it larger and slightly more visible for better scanning of complex images
+      // Larger container helps when scanning images with surrounding content
+      tempContainer.style.position = 'fixed';
+      tempContainer.style.top = '-2000px';
+      tempContainer.style.left = '-2000px';
+      tempContainer.style.width = '800px'; // Larger for better image processing
+      tempContainer.style.height = '800px';
+      tempContainer.style.opacity = '0.01'; // Nearly invisible but technically visible
+      tempContainer.style.pointerEvents = 'none';
+      tempContainer.style.zIndex = '-9999';
+      tempContainer.style.overflow = 'hidden';
+      document.body.appendChild(tempContainer);
+      
+      // Wait for container to be in DOM
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Create a temporary Html5Qrcode instance for file scanning
+      const tempScanner = new Html5Qrcode(tempContainerId);
+      
+      let decodedText: string | null = null;
+      
       try {
-        const decodedText = await html5QrCodeRef.current.scanFile(file, false);
+        // For images with surrounding text/content, we need to try multiple scanning strategies
+        console.log('Attempting to scan image file...', { 
+          fileName: file.name, 
+          fileType: file.type, 
+          fileSize: file.size 
+        });
+        
+        // Strategy: Try QR code specific scanning first since we know it works for simple images
+        // Then try variations that might work better for complex images with surrounding text
+        
+        try {
+          // First attempt: QR code format only - most reliable for QR codes
+          // Works for images that are just QR codes
+          decodedText = await tempScanner.scanFile(
+            file, 
+            false,
+            {
+              formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+            }
+          );
+        } catch (qrError: any) {
+          console.log('QR code only scan failed, trying with showScanRegion...', qrError);
+          
+          // Second attempt: QR code with showScanRegion enabled
+          // This can help focus scanning in complex images with surrounding content
+          try {
+            decodedText = await tempScanner.scanFile(
+              file, 
+              true, // Enable showScanRegion
+              {
+                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+              }
+            );
+          } catch (qrRegionError: any) {
+            console.log('QR with region failed, trying all default formats...', qrRegionError);
+            
+            // Third attempt: All default formats (no format restriction)
+            // Sometimes the library's default format detection works better
+            try {
+              decodedText = await tempScanner.scanFile(file, false);
+            } catch (defaultError: any) {
+              console.log('Default formats failed, trying all formats with region...', defaultError);
+              
+              // Fourth attempt: All formats with showScanRegion
+              try {
+                decodedText = await tempScanner.scanFile(file, true);
+              } catch (regionAllError: any) {
+                console.log('All formats with region failed, trying specific formats...', regionAllError);
+                
+                // Final attempt: Multiple specific formats
+                decodedText = await tempScanner.scanFile(
+                  file,
+                  false,
+                  {
+                    formatsToSupport: [
+                      Html5QrcodeSupportedFormats.QR_CODE,
+                      Html5QrcodeSupportedFormats.CODE_128,
+                      Html5QrcodeSupportedFormats.EAN_13,
+                    ]
+                  }
+                );
+              }
+            }
+          }
+        }
           
         if (decodedText) {
           // Parse and process the barcode
@@ -755,19 +895,40 @@ export default function ScanPage() {
         }
       } catch (error: any) {
         console.error('Error scanning image:', error);
-        if (error.message?.includes('No barcode') || error.message?.includes('not found')) {
-          alert('No barcode found in the image. Please try another image.');
+        const errorMessage = error?.message || error?.toString() || '';
+        
+        if (errorMessage.includes('No multiFormat Readers') || errorMessage.includes('No barcode') || errorMessage.includes('not found') || errorMessage.includes('NotFoundException')) {
+          alert('Could not detect a barcode or QR code in the image.\n\nPlease try:\n\n1. Use the camera scanner instead (more reliable)\n2. Ensure the image is:\n   • Clear and in focus\n   • The QR code/barcode is fully visible\n   • Good lighting and contrast\n   • Not distorted or at an angle\n\n3. Try taking a new photo if the image quality is poor');
+        } else if (errorMessage.includes('format') || errorMessage.includes('not supported')) {
+          alert('Barcode format not supported. Please try scanning with the camera instead, or ensure your image contains a standard barcode or QR code.');
+        } else if (errorMessage.includes('Cannot start file scan') || errorMessage.includes('ongoing camera scan')) {
+          alert('Cannot scan image while camera is active. Please close the camera first, or scan the image without opening the camera.');
         } else {
-          alert('Failed to scan image. Please try again.');
+          alert(`Failed to scan image: ${errorMessage || 'Please try again with a clearer image or use the camera scanner.'}`);
         }
       } finally {
+        // Clean up temporary scanner
+        try {
+          await tempScanner.clear();
+        } catch (clearError) {
+          // Ignore cleanup errors - scanner might not have initialized
+        }
+        // Remove temporary container if it exists
+        if (tempContainer && tempContainer.parentNode) {
+          try {
+            tempContainer.parentNode.removeChild(tempContainer);
+          } catch (removeError) {
+            // Ignore removal errors
+          }
+        }
         setLoading(false);
         // Reset file input
         e.target.value = '';
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error handling image upload:', error);
-      alert('Failed to process image');
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      alert(`Failed to process image: ${errorMessage}`);
       setLoading(false);
       e.target.value = '';
     }
@@ -898,13 +1059,13 @@ export default function ScanPage() {
                 className="cursor-pointer hover:opacity-80 transition-opacity"
               >
                 <p className="text-base text-white font-bold">
-                  {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                  {mounted ? format(selectedDate, 'EEEE, MMMM d, yyyy') : 'Loading...'}
                 </p>
               </button>
               <input
                 ref={calendarRef}
                 type="date"
-                value={format(selectedDate, 'yyyy-MM-dd')}
+                value={mounted ? format(selectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')}
                 onChange={handleDateChange}
                 className="absolute inset-0 opacity-0 cursor-pointer"
                 style={{ width: '100%', height: '100%' }}

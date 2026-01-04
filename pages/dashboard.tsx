@@ -42,7 +42,13 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useSharedDate();
   const [showCalendar, setShowCalendar] = useState(false);
   const [checklistStatus, setChecklistStatus] = useState<ChecklistStatus | null>(null);
+  const [mounted, setMounted] = useState(false);
   const calendarRef = useRef<HTMLInputElement>(null);
+
+  // Prevent hydration mismatch by only rendering date after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     // Check authentication and role
@@ -80,14 +86,16 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [router]);
 
-  // Refetch checklist when date changes
+  // Refetch checklist and summary when date changes
   useEffect(() => {
     fetchChecklistStatus();
+    fetchSummary();
   }, [selectedDate]);
 
   const fetchSummary = async () => {
     try {
-      const response = await fetch('/api/reports/summary?days=7');
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const response = await fetch(`/api/reports/summary?startDate=${dateStr}&endDate=${dateStr}`);
       const data = await response.json();
       if (data.success) {
         setSummary(data.summary);
@@ -160,13 +168,13 @@ export default function Dashboard() {
               className="text-right cursor-pointer hover:opacity-80 transition-opacity mt-1"
             >
               <p className="text-base text-white font-bold">
-                {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                {mounted ? format(selectedDate, 'EEEE, MMMM d, yyyy') : 'Loading...'}
               </p>
             </button>
             <input
               ref={calendarRef}
               type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
+              value={mounted ? format(selectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')}
               onChange={handleDateChange}
               className="absolute opacity-0 pointer-events-none"
               style={{ right: 0, top: 0, width: '200px', height: '60px' }}
@@ -180,13 +188,27 @@ export default function Dashboard() {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-4">
           <Link href="/scan">
-            <button className="w-full bg-green-500 text-white p-6 rounded-lg shadow-md text-lg font-semibold active:bg-green-600">
-              Scan Ticket
+            <button className="w-full bg-green-500 text-white p-6 rounded-lg shadow-md text-lg font-semibold active:bg-green-600 flex items-center justify-center space-x-2">
+              <Image 
+                src="/barcode-scanner.svg" 
+                alt="Barcode Scanner" 
+                width={28} 
+                height={28}
+                className="filter brightness-0 invert -scale-x-100"
+              />
+              <span>Scan Ticket</span>
             </button>
           </Link>
           <Link href="/daily-report">
-            <button className="w-full bg-purple-500 text-white p-6 rounded-lg shadow-md text-lg font-semibold active:bg-purple-600">
-              Register Sales
+            <button className="w-full bg-purple-500 text-white p-6 rounded-lg shadow-md text-lg font-semibold active:bg-purple-600 flex items-center justify-center space-x-2">
+              <Image 
+                src="/register.svg" 
+                alt="Register" 
+                width={28} 
+                height={28}
+                className="filter brightness-0 invert"
+              />
+              <span>Report</span>
             </button>
           </Link>
         </div>

@@ -97,11 +97,19 @@ const InputField = React.memo(({ label, field, value, showHelp = true, onHelpCli
       <div className="relative">
         <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-700 text-lg">$</span>
         <input
-          type="number"
-          step="0.01"
-          min="0"
-          value={value === 0 ? '' : value}
-          onChange={(e) => onChange(field, e.target.value)}
+          type="text"
+          inputMode="decimal"
+          value={value === 0 ? '' : value.toString()}
+          onChange={(e) => {
+            // Only allow numbers and decimal point
+            const inputValue = e.target.value.replace(/[^0-9.]/g, '');
+            // Ensure only one decimal point
+            const parts = inputValue.split('.');
+            const filteredValue = parts.length > 2 
+              ? parts[0] + '.' + parts.slice(1).join('')
+              : inputValue;
+            onChange(field, filteredValue);
+          }}
           onBlur={onBlur}
           onKeyDown={(e) => {
             if (!/[0-9.]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter'].includes(e.key) && !(e.ctrlKey || e.metaKey)) {
@@ -124,7 +132,13 @@ export default function DailyReportPage() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [helpField, setHelpField] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const calendarRef = useRef<HTMLInputElement>(null);
+
+  // Prevent hydration mismatch by only rendering date after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [formData, setFormData] = useState<DailyLotteryReport>({
     date: format(new Date(), 'yyyy-MM-dd'),
@@ -386,13 +400,13 @@ export default function DailyReportPage() {
                 className="cursor-pointer hover:opacity-80 transition-opacity"
               >
                 <p className="text-base text-white font-bold">
-                  {format(selectedDate, 'EEEE, MMMM d, yyyy')}
+                  {mounted ? format(selectedDate, 'EEEE, MMMM d, yyyy') : 'Loading...'}
                 </p>
               </button>
               <input
                 ref={calendarRef}
                 type="date"
-                value={format(selectedDate, 'yyyy-MM-dd')}
+                value={mounted ? format(selectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')}
                 onChange={handleDateChange}
                 className="absolute inset-0 opacity-0 cursor-pointer"
                 style={{ width: '100%', height: '100%' }}
@@ -452,13 +466,13 @@ export default function DailyReportPage() {
               <InputField label="Total EBT Sale" field="debitCreditCard" value={formData.debitCreditCard || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
               <InputField label="Total Credit Card Sale" field="creditsSale" value={formData.creditsSale || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
               <InputField label="Total Debit Card Sale" field="debitsSale" value={formData.debitsSale || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+              <InputField label="Register Cash" field="registerCash" value={formData.registerCash || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
               {/* <InputField label="Vending Cash" field="vendingCash" value={formData.vendingCash || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} /> */}
             </div>
             <div>
-              <ReadOnlyField label="Online Balance" value={formData.onlineBalance || 0} />
-              <ReadOnlyField label="Instant Balance" value={formData.instantBalance || 0} />
-              <ReadOnlyField label="Total Balance" value={formData.totalBalance || 0} />
-              <InputField label="Register Cash" field="registerCash" value={formData.registerCash || 0} onHelpClick={setHelpField} onChange={handleInputChange} onBlur={saveReport} />
+              <ReadOnlyField label="Lottery Online Balance" value={formData.onlineBalance || 0} />
+              <ReadOnlyField label="Lottery Instant Balance" value={formData.instantBalance || 0} />
+              <ReadOnlyField label="LotteryTotal Balance" value={formData.totalBalance || 0} />
               <ReadOnlyField 
                 label="Over/Short" 
                 value={formData.overShort || 0}

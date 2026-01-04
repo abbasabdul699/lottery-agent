@@ -3,6 +3,7 @@ const { parse } = require('url');
 const next = require('next');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
@@ -16,6 +17,20 @@ const httpsOptions = {
   cert: fs.readFileSync(path.join(__dirname, 'localhost+1.pem')),
 };
 
+// Get local IP address
+function getLocalIPAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      // Skip internal (i.e. 127.0.0.1) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
 app.prepare().then(() => {
   createServer(httpsOptions, async (req, res) => {
     try {
@@ -28,8 +43,11 @@ app.prepare().then(() => {
     }
   }).listen(port, hostname, (err) => {
     if (err) throw err;
-    console.log(`> Ready on https://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${port}`);
-    console.log(`> Also accessible at https://10.8.5.30:${port}`);
+    const localIP = getLocalIPAddress();
+    console.log(`> Ready on https://localhost:${port}`);
+    if (localIP !== 'localhost') {
+      console.log(`> Also accessible at https://${localIP}:${port}`);
+    }
   });
 });
 

@@ -50,7 +50,7 @@ export function parseBarcode(barcodeData: string): ParsedBarcode {
   // BBBBBB = Book # (6 digits, positions 4-9)
   // TTT = Ticket # (3 digits, positions 10-12)
   // S... = 17-digit tail (positions 13-29, not needed)
-  if (digitsOnly.length >= 13 && /^\d+$/.test(digitsOnly)) {
+  if (digitsOnly.length >= 13 && digitsOnly.length <= 30 && /^\d+$/.test(digitsOnly)) {
     // Extract by fixed positions
     const gameNumber = digitsOnly.substring(0, 3);
     const prefix = digitsOnly.substring(3, 4);
@@ -63,6 +63,28 @@ export function parseBarcode(barcodeData: string): ParsedBarcode {
     result.gameName = `Game ${gameNumber}`;
     result.isValid = true;
     result.ticketType = 'lottery';
+    return result;
+  }
+
+  // Strategy 1.5: 12-digit format (common alternative)
+  // Possible formats:
+  // - GGG BBBBBB TTT (Game 3 + Book 6 + Ticket 3 = 12)
+  // - BBBBBB TTTTTT (Book 6 + Ticket 6 = 12)
+  // - GGGGGG TTTTTT (Game 6 + Ticket 6 = 12)
+  if (digitsOnly.length === 12 && /^\d+$/.test(digitsOnly)) {
+    // Try format: Game (3) + Book (6) + Ticket (3)
+    const gameNumber = digitsOnly.substring(0, 3);
+    const bookNumber = digitsOnly.substring(3, 9);
+    const ticketNumber = digitsOnly.substring(9, 12);
+    
+    result.gameNumber = gameNumber;
+    result.gameBook = bookNumber;
+    result.ticketNumber = ticketNumber;
+    result.gameName = `Game ${gameNumber}`;
+    result.isValid = true;
+    result.ticketType = 'lottery';
+    // Log for debugging
+    console.log('Parsed 12-digit barcode:', { gameNumber, bookNumber, ticketNumber, raw: barcodeData });
     return result;
   }
 
