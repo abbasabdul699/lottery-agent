@@ -286,6 +286,7 @@ export default function ScanPage() {
         setDuplicateWarning(false);
         setTicketNumber('');
         setParsedBarcode(null);
+        // Refresh the ticket list for the selected date
         fetchTodayTickets();
         
         // Auto-focus back to ticket number input
@@ -398,6 +399,7 @@ export default function ScanPage() {
           setLastScannedTicket(data.ticket);
         }
         
+        // Refresh the ticket list for the selected date
         fetchTodayTickets();
         
         // Clear success message after 2 seconds
@@ -992,7 +994,7 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50" style={{ paddingBottom: '107px' }}>
       <div className="bg-blue-600 text-white p-4 shadow-md">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
@@ -1141,9 +1143,11 @@ export default function ScanPage() {
         <div className="bg-white rounded-lg shadow-md p-4">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-xl font-bold text-gray-900">
-            {format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+            {mounted && format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
                 ? "Books Scanned"
-                : `${format(selectedDate, 'MMM d')} Tickets`}
+                : mounted
+                ? `${format(selectedDate, 'MMM d')} Tickets`
+                : "Books Scanned"}
           </h2>
             <span className="text-sm font-semibold text-purple-700 bg-purple-100 px-3 py-1.5 rounded-full border border-purple-300">
               Total Scanned: {todayTickets.length}
@@ -1160,6 +1164,10 @@ export default function ScanPage() {
                 
                 todayTickets.forEach((ticket) => {
                   const price = ticket.costPerTicket || ticket.amount || 0;
+                  // Skip tickets with $0.00 price - they shouldn't exist
+                  if (price <= 0) {
+                    return;
+                  }
                   const priceKey = price.toFixed(2);
                   if (!priceGroups[priceKey]) {
                     priceGroups[priceKey] = [];
@@ -1181,7 +1189,7 @@ export default function ScanPage() {
                   
                   // Otherwise sort by price descending
                   return priceB - priceA;
-                });
+                }).filter(priceKey => parseFloat(priceKey) > 0); // Filter out any $0.00 groups
 
                 return sortedPrices.map((priceKey) => {
                   const tickets = priceGroups[priceKey];
@@ -1379,7 +1387,7 @@ export default function ScanPage() {
               <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="font-semibold text-sm">Scanned: {sessionScanCount}</span>
+              <span className="font-semibold text-sm">Scanned: {todayTickets.length}</span>
             </div>
             {/* Last scanned ticket preview */}
             {lastScannedTicket && (

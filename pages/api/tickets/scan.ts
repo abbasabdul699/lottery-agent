@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import connectDB from '@/lib/mongodb';
 import Ticket from '@/models/Ticket';
 import Game from '@/models/Game';
-import { parseISO, startOfDay } from 'date-fns';
+import { startOfDay } from 'date-fns';
 
 export default async function handler(
   req: NextApiRequest,
@@ -33,7 +33,15 @@ export default async function handler(
     });
 
     // Use provided date or default to today
-    const ticketDate = date ? startOfDay(parseISO(date)) : startOfDay(new Date());
+    // Parse date string in local timezone to avoid timezone issues
+    let ticketDate: Date;
+    if (date) {
+      // Format: "YYYY-MM-DD"
+      const [year, month, day] = (date as string).split('-').map(Number);
+      ticketDate = startOfDay(new Date(year, month - 1, day)); // month is 0-indexed
+    } else {
+      ticketDate = startOfDay(new Date());
+    }
 
     // Check for duplicate ticket - same ticket number, game number, and book number on the same date
     const duplicateQuery: any = {

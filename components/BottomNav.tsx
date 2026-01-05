@@ -70,7 +70,7 @@ export default function BottomNav() {
   );
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50" style={{ height: '107px' }}>
+    <nav className="fixed bottom-0 left-0 right-0 z-[100]" style={{ height: '107px' }}>
       {/* Background with curved top - matching Figma Union shape */}
       <div 
         className="absolute inset-0 bg-white" 

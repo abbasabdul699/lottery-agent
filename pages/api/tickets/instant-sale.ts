@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import connectDB from '@/lib/mongodb';
 import Ticket from '@/models/Ticket';
-import { parseISO, startOfDay, endOfDay } from 'date-fns';
+import { startOfDay, endOfDay } from 'date-fns';
 
 export default async function handler(
   req: NextApiRequest,
@@ -20,7 +20,11 @@ export default async function handler(
       return res.status(400).json({ error: 'Date is required' });
     }
 
-    const queryDate = parseISO(date as string);
+    // Parse date string in local timezone to avoid timezone issues
+    // Format: "YYYY-MM-DD"
+    const dateStr = date as string;
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const queryDate = new Date(year, month - 1, day); // month is 0-indexed
     const start = startOfDay(queryDate);
     const end = endOfDay(queryDate);
 
